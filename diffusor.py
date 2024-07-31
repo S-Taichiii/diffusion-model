@@ -6,10 +6,36 @@ import matplotlib.pyplot as plt
 from unet import Unet
 
 from torchvision import transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.optim import Adam
 from torch import nn
 from tqdm import tqdm
+from pathlib import Path
+from PIL import Image
+
+class LineDatasets(Dataset):
+    # パスとtransformの取得
+    def __init__(self, img_dir, transform=None):
+        self.img_paths = self._get_img_paths(img_dir)
+        self.transform = transform
+
+    # データの取得
+    def __getitem__(self, index): 
+        path = self.img_paths[index]
+        img= Image.open(path)
+        if self.transform is not None:
+            img = self.transform(img)
+        return img
+
+    # パスの取得
+    def _get_img_paths(self, img_dir):
+        img_dir = Path(img_dir)
+        img_paths = [path for path in img_dir.iterdir() if path.suffix == ".jpg"]
+        return img_paths
+
+    # データの数を取得
+    def __len__(self):
+        return len(self.img_paths)
 
 class Diffuser:
     def __init__(self, num_timesteps=1000, beta_start=0.0001, beta_end=0.02, device="cpu"):
@@ -53,14 +79,13 @@ class Diffuser:
             
             model.train()
 
-            noise = torch.randn_like(x, device=self.device)
+            noise = torch.rand_like(x, device=self.device)
             noise[t == 1] = 0
 
             mu = (x - ((1 - alpha) / torch.sqrt(1 - alpha_bar)) * eps) / torch.sqrt(alpha)
             std = torch.sqrt((1 - alpha) * (1 - alpha_bar_prev) / (1 - alpha_bar))
 
             return mu + noise * std
-
 
     def reverse_to_img(self, x):
         x = x * 255
@@ -70,7 +95,7 @@ class Diffuser:
         to_pil = transforms.ToPILImage()
         return to_pil(x)
 
-    def sample(self, model, x_shape=(20, 1, 28, 28)):
+    def sample(self, model, x_shape=(50, 3, 70, 100)):
         batch_size = x_shape[0]
         x = torch.randn(x_shape, device=self.device)
 
@@ -87,24 +112,38 @@ def show_images(images, rows=2, cols=10):
     for r in range(rows):
         for c in range(cols):
             fig.add_subplot(rows, cols, i + 1)
-            plt.imshow(images[i], cmap="gray")
+            plt.imshow(images[i])
             plt.axis("off") # 縦軸、横軸を非表示にする
             i += 1
 
     plt.show()
 
+def show_image(images):
+    plt.imshow(images[0])
+    plt.axis("off")
+    plt.show()
 
-img_size = 28
-batch_size = 128
+
+batch_size = 50
 num_timesteps = 1000
-epochs = 10
+epochs = 20
 lr = 1e-3
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
 preprocess = transforms.ToTensor()
-dataset = torchvision.datasets.MNIST(root="./data", download=True, transform=preprocess)
+dataset = LineDatasets("line_data_100_70", preprocess)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+# diffuser = Diffuser(num_timesteps, device=device)
+# # サイズを確認
+# for x in dataloader:
+#     plt.imshow(diffuser.reverse_to_img(x[2]))
+#     plt.show()
+#     print(x.shape)
+#     break
+
+torch.cuda.empty_cache()
 
 diffuser = Diffuser(num_timesteps, device=device)
 model = Unet()
@@ -120,7 +159,7 @@ for epoch in range(epochs):
     # images = diffuser.sample(model)
     # show_images(images)
 
-    for images, labels in tqdm(dataloader):
+    for images in tqdm(dataloader):
         optimizer.zero_grad()
         x = images.to(device)
         t = torch.randint(1, num_timesteps + 1, (len(x), ), device=device)
@@ -147,4 +186,5 @@ plt.show()
 
 # 画像を生成
 images = diffuser.sample(model)
+show_image(images)
 show_images(images)

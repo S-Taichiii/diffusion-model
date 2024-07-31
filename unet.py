@@ -26,7 +26,7 @@ class ConvBlock(nn.Module):
         return y
     
 class Unet(nn.Module):
-    def __init__(self, input_ch=1, time_embed_dim=100):
+    def __init__(self, input_ch=3, time_embed_dim=100):
         super().__init__()
         self.time_embed_dim = time_embed_dim
 
@@ -38,7 +38,8 @@ class Unet(nn.Module):
         self.out = nn.Conv2d(64, input_ch, 1)
 
         self.maxpool = nn.MaxPool2d(2)
-        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear") # バイリニア補間
+        self.upsample2 = nn.Upsample((35, 50) , mode="bilinear") # バイリニア補間
+        self.upsample1 = nn.Upsample(scale_factor=2, mode="bilinear") # バイリニア補間
 
     def forward(self, x, timesteps):
         # 正弦波位置エンコーディング
@@ -53,10 +54,10 @@ class Unet(nn.Module):
         x = self.bot1(x, v)
 
         # UpSampling 
-        x = self.upsample(x)
+        x = self.upsample2(x)
         x = torch.cat([x, x2], dim=1) # skip connection
         x = self.up2(x, v)
-        x = self.upsample(x)
+        x = self.upsample1(x)
         x = torch.cat([x, x1], dim=1) 
         x = self.up1(x, v)
         x = self.out(x)
@@ -88,8 +89,4 @@ def pos_encoding(ts, output_dim, device="cpu"):
     return v
 
 if __name__== "__main__":
-    v = _pos_encoding(1, 16)
-    print(v.shape)
-    t = pos_encoding(torch.tensor([1, 2, 3]), 16)
-    print(t.shape)
-
+    print()
