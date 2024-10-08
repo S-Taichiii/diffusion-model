@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import torchvision
 import matplotlib.pyplot as plt
+import time
 from unet import Unet
 
 from torchvision import transforms
@@ -63,10 +64,10 @@ class Diffuser:
         T = self.num_timesteps
         assert (t >= 1).all() and (t <= T).all()
 
-        t_idx = t - 1
+        t_idx = t - 1  # alphas[0] is for t=1
         alpha = self.alphas[t_idx]
         alpha_bar = self.alpha_bars[t_idx]
-        alpha_bar_prev = self.alpha_bars[t_idx - 1]
+        alpha_bar_prev = self.alpha_bars[t_idx-1]
 
         N = alpha.size(0)
         alpha = alpha.view(N, 1, 1, 1)
@@ -76,16 +77,14 @@ class Diffuser:
         model.eval()
         with torch.no_grad():
             eps = model(x, t)
-            
-            model.train()
+        model.train()
 
-            noise = torch.rand_like(x, device=self.device)
-            noise[t == 1] = 0
+        noise = torch.randn_like(x, device=self.device)
+        noise[t == 1] = 0  # no noise at t=1
 
-            mu = (x - ((1 - alpha) / torch.sqrt(1 - alpha_bar)) * eps) / torch.sqrt(alpha)
-            std = torch.sqrt((1 - alpha) * (1 - alpha_bar_prev) / (1 - alpha_bar))
-
-            return mu + noise * std
+        mu = (x - ((1-alpha) / torch.sqrt(1-alpha_bar)) * eps) / torch.sqrt(alpha)
+        std = torch.sqrt((1-alpha) * (1-alpha_bar_prev) / (1-alpha_bar))
+        return mu + noise * std
 
     def reverse_to_img(self, x):
         x = x * 255
@@ -95,7 +94,7 @@ class Diffuser:
         to_pil = transforms.ToPILImage()
         return to_pil(x)
 
-    def sample(self, model, x_shape=(50, 3, 70, 100)):
+    def sample(self, model, x_shape=(20, 3, 60, 60)):
         batch_size = x_shape[0]
         x = torch.randn(x_shape, device=self.device)
 
@@ -107,7 +106,7 @@ class Diffuser:
         return images
 
 def show_images(images, rows=2, cols=10):
-    fig = plt.figure(figsize=(cols, rows))
+    fig = plt.figure(figsize=(cols, rows), facecolor='gray')
     i = 0
     for r in range(rows):
         for c in range(cols):
@@ -119,20 +118,21 @@ def show_images(images, rows=2, cols=10):
     plt.show()
 
 def show_image(images):
+    fig = plt.figure(facecolor='gray')
     plt.imshow(images[0])
     plt.axis("off")
     plt.show()
 
 
-batch_size = 50
+batch_size = 128
 num_timesteps = 1000
-epochs = 20
+epochs = 15
 lr = 1e-3
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
 preprocess = transforms.ToTensor()
-dataset = LineDatasets("line_data_100_70", preprocess)
+dataset = LineDatasets("line_data_60_60", preprocess)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # diffuser = Diffuser(num_timesteps, device=device)
@@ -150,19 +150,21 @@ model = Unet()
 model.to(device)
 optimizer = Adam(model.parameters(), lr=lr)
 
+start_time = time.time()
 losses = []
 for epoch in range(epochs):
     loss_sum = 0.0
-    count = 0
+    cnt = 0
 
-    # エポックごとにデータ生成をし、結果を見たいときは下記のコメントアウトをとる
-    # images = diffuser.sample(model)
-    # show_images(images)
+    # generate samples every epoch ===================
+    images = diffuser.sample(model)
+    show_images(images)
+    # ================================================
 
     for images in tqdm(dataloader):
         optimizer.zero_grad()
         x = images.to(device)
-        t = torch.randint(1, num_timesteps + 1, (len(x), ), device=device)
+        t = torch.randint(1, num_timesteps+1, (len(x),), device=device)
 
         x_noisy, noise = diffuser.add_noise(x, t)
         noise_pred = model(x_noisy, t)
@@ -172,11 +174,14 @@ for epoch in range(epochs):
         optimizer.step()
 
         loss_sum += loss.item()
-        count += 1
+        cnt += 1
 
-    loss_avg = loss_sum / count
+    loss_avg = loss_sum / cnt
     losses.append(loss_avg)
-    print(f"Epoch {epoch} | Loss: {loss_avg}")
+    print(f'Epoch {epoch} | Loss: {loss_avg}')
+
+# lerning time 
+print(f"learning time is {time.time() - start_time} (s)")
 
 # lossのグラフ
 plt.plot(losses)
@@ -185,6 +190,5 @@ plt.ylabel("Loss")
 plt.show()
 
 # 画像を生成
-images = diffuser.sample(model)
-show_image(images)
+images = diffuser.sample(model, x_shape=(20, 3, 60, 60))
 show_images(images)

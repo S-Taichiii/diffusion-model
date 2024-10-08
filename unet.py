@@ -38,8 +38,7 @@ class Unet(nn.Module):
         self.out = nn.Conv2d(64, input_ch, 1)
 
         self.maxpool = nn.MaxPool2d(2)
-        self.upsample2 = nn.Upsample((35, 50) , mode="bilinear") # バイリニア補間
-        self.upsample1 = nn.Upsample(scale_factor=2, mode="bilinear") # バイリニア補間
+        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear") # バイリニア補間
 
     def forward(self, x, timesteps):
         # 正弦波位置エンコーディング
@@ -54,10 +53,10 @@ class Unet(nn.Module):
         x = self.bot1(x, v)
 
         # UpSampling 
-        x = self.upsample2(x)
+        x = self.upsample(x)
         x = torch.cat([x, x2], dim=1) # skip connection
         x = self.up2(x, v)
-        x = self.upsample1(x)
+        x = self.upsample(x)
         x = torch.cat([x, x1], dim=1) 
         x = self.up1(x, v)
         x = self.out(x)
