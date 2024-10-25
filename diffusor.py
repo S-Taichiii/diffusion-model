@@ -2,6 +2,8 @@ import math
 import torch
 import torch.nn.functional as F
 import torchvision
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import time
 from unet import Unet
@@ -94,7 +96,7 @@ class Diffuser:
         to_pil = transforms.ToPILImage()
         return to_pil(x)
 
-    def sample(self, model, x_shape=(20, 3, 60, 60)):
+    def sample(self, model, x_shape=(20, 3, 80, 80)):
         batch_size = x_shape[0]
         x = torch.randn(x_shape, device=self.device)
 
@@ -132,7 +134,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
 preprocess = transforms.ToTensor()
-dataset = LineDatasets("line_data_60_60", preprocess)
+dataset = LineDatasets("line_data_56_56", preprocess)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # diffuser = Diffuser(num_timesteps, device=device)
@@ -157,8 +159,8 @@ for epoch in range(epochs):
     cnt = 0
 
     # generate samples every epoch ===================
-    images = diffuser.sample(model)
-    show_images(images)
+    # images = diffuser.sample(model)
+    # show_images(images)
     # ================================================
 
     for images in tqdm(dataloader):
@@ -190,5 +192,6 @@ plt.ylabel("Loss")
 plt.show()
 
 # 画像を生成
-images = diffuser.sample(model, x_shape=(20, 3, 60, 60))
+images = diffuser.sample(model, x_shape=(20, 3, 80, 80))
 show_images(images)
+show_image(images)

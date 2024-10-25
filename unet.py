@@ -32,7 +32,9 @@ class Unet(nn.Module):
 
         self.down1 = ConvBlock(input_ch, 64, time_embed_dim)
         self.down2 = ConvBlock(64, 128, time_embed_dim)
-        self.bot1 = ConvBlock(128, 256, time_embed_dim)
+        self.down3 = ConvBlock(128, 256, time_embed_dim)
+        self.bot1 = ConvBlock(256, 512, time_embed_dim)
+        self.up3 = ConvBlock(256 + 512, 256, time_embed_dim)
         self.up2 = ConvBlock(128 + 256, 128, time_embed_dim)
         self.up1 = ConvBlock(128 + 64, 64, time_embed_dim)
         self.out = nn.Conv2d(64, input_ch, 1)
@@ -49,10 +51,15 @@ class Unet(nn.Module):
         x = self.maxpool(x1)
         x2 = self.down2(x, v)
         x = self.maxpool(x2)
+        x3 = self.down3(x, v)
+        x = self.maxpool(x3)
 
         x = self.bot1(x, v)
 
         # UpSampling 
+        x = self.upsample(x)
+        x = torch.cat([x, x3], dim=1)
+        x = self.up3(x, v)
         x = self.upsample(x)
         x = torch.cat([x, x2], dim=1) # skip connection
         x = self.up2(x, v)
