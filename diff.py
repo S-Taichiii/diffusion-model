@@ -1,22 +1,15 @@
-import math
 import torch
-import torch.nn.functional as F
-import torchvision
 import matplotlib
 matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-import time
-from unet import Unet
 
 from torchvision import transforms
 from torch.utils.data import DataLoader, Dataset
 from torch.optim import Adam
-from torch import nn
 from tqdm import tqdm
 from pathlib import Path
 from PIL import Image
 
-class LineDatasets(Dataset):
+class Datasets(Dataset):
     # パスとtransformの取得
     def __init__(self, img_dir, transform=None):
         self.img_paths = self._get_img_paths(img_dir)
@@ -106,92 +99,3 @@ class Diffuser:
             
         images = [self.reverse_to_img(x[i]) for i in range(batch_size)]
         return images
-
-def show_images(images, rows=2, cols=10):
-    fig = plt.figure(figsize=(cols, rows), facecolor='gray')
-    i = 0
-    for r in range(rows):
-        for c in range(cols):
-            fig.add_subplot(rows, cols, i + 1)
-            plt.imshow(images[i])
-            plt.axis("off") # 縦軸、横軸を非表示にする
-            i += 1
-
-    plt.show()
-
-def show_image(images):
-    fig = plt.figure(facecolor='gray')
-    plt.imshow(images[0])
-    plt.axis("off")
-    plt.show()
-
-
-batch_size = 128
-num_timesteps = 1000
-epochs = 15
-lr = 1e-3
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"device: {device}を使用しています")
-
-preprocess = transforms.ToTensor()
-dataset = LineDatasets("line_data_56_56", preprocess)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-# diffuser = Diffuser(num_timesteps, device=device)
-# # サイズを確認
-# for x in dataloader:
-#     plt.imshow(diffuser.reverse_to_img(x[2]))
-#     plt.show()
-#     print(x.shape)
-#     break
-
-torch.cuda.empty_cache()
-
-diffuser = Diffuser(num_timesteps, device=device)
-model = Unet()
-model.to(device)
-optimizer = Adam(model.parameters(), lr=lr)
-
-start_time = time.time()
-losses = []
-for epoch in range(epochs):
-    loss_sum = 0.0
-    cnt = 0
-
-    # generate samples every epoch ===================
-    # images = diffuser.sample(model)
-    # show_images(images)
-    # ================================================
-
-    for images in tqdm(dataloader):
-        optimizer.zero_grad()
-        x = images.to(device)
-        t = torch.randint(1, num_timesteps+1, (len(x),), device=device)
-
-        x_noisy, noise = diffuser.add_noise(x, t)
-        noise_pred = model(x_noisy, t)
-        loss = F.mse_loss(noise, noise_pred)
-
-        loss.backward()
-        optimizer.step()
-
-        loss_sum += loss.item()
-        cnt += 1
-
-    loss_avg = loss_sum / cnt
-    losses.append(loss_avg)
-    print(f'Epoch {epoch} | Loss: {loss_avg}')
-
-# lerning time 
-print(f"learning time is {time.time() - start_time} (s)")
-
-# lossのグラフ
-plt.plot(losses)
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.show()
-
-# 画像を生成
-images = diffuser.sample(model, x_shape=(20, 3, 80, 80))
-show_images(images)
-show_image(images)
