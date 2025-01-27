@@ -3,16 +3,28 @@ import datetime
 import torch
 import matplotlib.pyplot as plt
 import csv
-from unet import Unet
-from diff import Diffuser
+
+from pathlib import Path
+from PIL import Image
+from torch.utils.data import Dataset
+from torch import nn
+# from unet import Unet
+# from diff import Diffuser
 
 class Utils:
     @staticmethod
-    def recordResult(output_path: str="./result", model=None, losses=None, images=None, **kwargs):
+    def recordResult(model=None, losses=None, images=None, **kwargs) -> None:
         try:
+            # current directory上にresultディレクトリがない場合は作成
+            cd = os.getcwd()
+            result_dir = os.path.join(cd, "result")
+            if not os.path.exists(result_dir):
+                os.makedirs(result_dir)
+
+            # resultディレクトリ上に現在の日時の名前のディレクトリを作成、そこに各種記録を保存
             now = datetime.datetime.now()
             dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
-            dir_path: str = output_path + "/" + dir_name
+            dir_path: str = result_dir + "/" + dir_name
             os.makedirs(dir_path, exist_ok=True)
 
             # ハイパーパラメーター、学習時間などの情報をテキストファイルに書き込み、保存
@@ -45,18 +57,18 @@ class Utils:
             print(f'エラーが発生しました：{e}')
 
     @staticmethod
-    def saveModelParameter(dir_path: str, model):
+    def saveModelParameter(dir_path: str, model: nn.Module) -> None:
         output_path: str = dir_path + "/trained_para.pth"
         torch.save(model.state_dict(), output_path) 
     
     @staticmethod
-    def loadModel(path, model, device='cpu'):
+    def loadModel(path: str, model: nn.Module, device='cpu') -> nn.Module:
         model.to(device=device)
         model.load_state_dict(torch.load(path))
         return model
 
     @staticmethod
-    def saveLossToGraph(dir_path, losses):
+    def saveLossToGraph(dir_path: str, losses) -> None:
         file_path = dir_path + "/losses.png" 
         plt.plot(losses)
         plt.xlabel("Epoch")
@@ -65,8 +77,8 @@ class Utils:
         plt.close()
 
     @staticmethod
-    def saveLossToCsv(dir_path, losses):
-        file_path = dir_path + "/losses.csv"
+    def saveLossToCsv(dir_path: str, losses) -> None:
+        file_path: str = dir_path + "/losses.csv"
         with open(file_path, 'w', newline="") as f:
             title = ["epoch", "loss"]
             writer = csv.writer(f)
@@ -76,7 +88,7 @@ class Utils:
                 writer.writerow([i+ 1, loss])
 
     @staticmethod
-    def saveImages(dir_path, images):
+    def saveImages(dir_path: str, images) -> None:
         # 画像をまとめて保存
         Utils.concat_images(dir_path, images)
 
@@ -91,8 +103,8 @@ class Utils:
 
 
     @staticmethod
-    def concat_images(dir_path, images, rows=2, cols=10):
-        file_name = dir_path + f'/catpic1_{rows * cols}.png'
+    def concat_images(dir_path: str, images, rows: int=2, cols: int=10) -> None:
+        file_name: str = dir_path + f'/catpic1_{rows * cols}.png'
         fig = plt.figure(figsize=(cols, rows), facecolor='gray')
         i = 0
         for r in range(rows):
@@ -105,6 +117,29 @@ class Utils:
         plt.savefig(file_name)
         plt.close()
 
+class Datasets(Dataset):
+    # パスとtransformの取得
+    def __init__(self, img_dir, transform=None):
+        self.img_paths = self._get_img_paths(img_dir)
+        self.transform = transform
+
+    # データの取得
+    def __getitem__(self, index): 
+        path = self.img_paths[index]
+        img= Image.open(path)
+        if self.transform is not None:
+            img = self.transform(img)
+        return img
+
+    # パスの取得
+    def _get_img_paths(self, img_dir):
+        img_dir = Path(img_dir)
+        img_paths = [path for path in img_dir.iterdir() if path.suffix == ".jpg"]
+        return img_paths
+
+    # データの数を取得
+    def __len__(self):
+        return len(self.img_paths)
 
 if __name__ == "__main__":
     print("hello world")
@@ -115,3 +150,5 @@ if __name__ == "__main__":
 
     # images = diff.sample(model, x_shape=(50, 3, 32, 32))
     # Utils.recordResult(images=images)
+    
+    Utils.recordResult()

@@ -8,19 +8,20 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from tqdm import tqdm
 
-from diff import Datasets, Diffuser
-from unet import Unet
-from utils import Utils
+from diff import Diffuser
+from models.unet import Unet
+from utils import Utils, Datasets
 
 batch_size = 128
 num_timesteps = 1000
 epochs = 200
 lr = 1e-3
+dataset_name = "data/circle_32x32" 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
 preprocess = transforms.ToTensor()
-dataset = Datasets("data/circle_32x32", preprocess)
+dataset = Datasets(dataset_name, preprocess)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # diffuser = Diffuser(num_timesteps, device=device)
@@ -83,5 +84,6 @@ Utils.recordResult(
     epochs=epochs,
     learning_rate=lr,
     device=device,
-    learning_time=learning_time
+    learning_time=learning_time,
+    dataset_name=dataset_name,
 )

@@ -1,37 +1,9 @@
 import torch
 import matplotlib
 matplotlib.use('TkAgg')
-
 from torchvision import transforms
-from torch.utils.data import DataLoader, Dataset
-from torch.optim import Adam
 from tqdm import tqdm
-from pathlib import Path
-from PIL import Image
 
-class Datasets(Dataset):
-    # パスとtransformの取得
-    def __init__(self, img_dir, transform=None):
-        self.img_paths = self._get_img_paths(img_dir)
-        self.transform = transform
-
-    # データの取得
-    def __getitem__(self, index): 
-        path = self.img_paths[index]
-        img= Image.open(path)
-        if self.transform is not None:
-            img = self.transform(img)
-        return img
-
-    # パスの取得
-    def _get_img_paths(self, img_dir):
-        img_dir = Path(img_dir)
-        img_paths = [path for path in img_dir.iterdir() if path.suffix == ".jpg"]
-        return img_paths
-
-    # データの数を取得
-    def __len__(self):
-        return len(self.img_paths)
 
 class Diffuser:
     def __init__(self, num_timesteps=1000, beta_start=0.0001, beta_end=0.02, device="cpu"):
