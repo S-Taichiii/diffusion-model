@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import matplotlib
 matplotlib.use('TkAgg')
 import time
+import inspect
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam
@@ -12,11 +13,12 @@ from diff import Diffuser
 from models.unet import Unet
 from utils import Utils, Datasets
 
+network_file = inspect.getfile(Unet)
+dataset_name = "data/line_32x32" 
 batch_size = 128
 num_timesteps = 1000
 epochs = 200
 lr = 1e-3
-dataset_name = "data/circle_32x32" 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
@@ -86,4 +88,5 @@ Utils.recordResult(
     device=device,
     learning_time=learning_time,
     dataset_name=dataset_name,
+    network_file=network_file
 )

@@ -3,12 +3,13 @@ import datetime
 import torch
 import matplotlib.pyplot as plt
 import csv
+import inspect
 
 from pathlib import Path
 from PIL import Image
 from torch.utils.data import Dataset
 from torch import nn
-# from unet import Unet
+# from models.unet2 import Unet
 # from diff import Diffuser
 
 class Utils:
@@ -24,7 +25,7 @@ class Utils:
             # resultディレクトリ上に現在の日時の名前のディレクトリを作成、そこに各種記録を保存
             now = datetime.datetime.now()
             dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
-            dir_path: str = result_dir + "/" + dir_name
+            dir_path: str = os.path.join(result_dir, dir_name)
             os.makedirs(dir_path, exist_ok=True)
 
             # ハイパーパラメーター、学習時間などの情報をテキストファイルに書き込み、保存
@@ -58,7 +59,7 @@ class Utils:
 
     @staticmethod
     def saveModelParameter(dir_path: str, model: nn.Module) -> None:
-        output_path: str = dir_path + "/trained_para.pth"
+        output_path: str = os.path.join(dir_path, "trained_para.pth")
         torch.save(model.state_dict(), output_path) 
     
     @staticmethod
@@ -69,7 +70,7 @@ class Utils:
 
     @staticmethod
     def saveLossToGraph(dir_path: str, losses) -> None:
-        file_path = dir_path + "/losses.png" 
+        file_path: str = os.path.join(dir_path, "losses.png")
         plt.plot(losses)
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
@@ -78,7 +79,7 @@ class Utils:
 
     @staticmethod
     def saveLossToCsv(dir_path: str, losses) -> None:
-        file_path: str = dir_path + "/losses.csv"
+        file_path: str = os.path.join(dir_path, "losses.csv")
         with open(file_path, 'w', newline="") as f:
             title = ["epoch", "loss"]
             writer = csv.writer(f)
@@ -86,6 +87,8 @@ class Utils:
 
             for i, loss in enumerate(losses):
                 writer.writerow([i+ 1, loss])
+
+            writer.writerow(["最小値", min(losses)])
 
     @staticmethod
     def saveImages(dir_path: str, images) -> None:
@@ -142,8 +145,6 @@ class Datasets(Dataset):
         return len(self.img_paths)
 
 if __name__ == "__main__":
-    print("hello world")
-
     # device = "cuda" if torch.cuda.is_available() else "cpu"
     # diff = Diffuser(device=device)
     # model = Utils.loadModel("result/2025_01_20_14_23/trained_para.pth", Unet(), device=device)
