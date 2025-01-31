@@ -3,7 +3,6 @@ import datetime
 import torch
 import matplotlib.pyplot as plt
 import csv
-import inspect
 
 from pathlib import Path
 from PIL import Image
@@ -98,7 +97,7 @@ class Utils:
         # 画像を個々に保存する
         for i, image in enumerate(images):
             fig = plt.figure(facecolor="gray")
-            file_name = dir_path + f'/pic{i+1}.png'
+            file_name = os.path.join(dir_path, f'/pic{i+1}.png')
             plt.imshow(image)
             plt.axis("off")
             plt.savefig(file_name)
@@ -107,7 +106,7 @@ class Utils:
 
     @staticmethod
     def concat_images(dir_path: str, images, rows: int=2, cols: int=10) -> None:
-        file_name: str = dir_path + f'/catpic1_{rows * cols}.png'
+        file_name: str = os.path.join(dir_path, f'/catpic1_{rows * cols}.png')
         fig = plt.figure(figsize=(cols, rows), facecolor='gray')
         i = 0
         for r in range(rows):
