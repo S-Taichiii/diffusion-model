@@ -25,6 +25,8 @@ class Utils:
             now = datetime.datetime.now()
             dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
             dir_path: str = os.path.join(result_dir, dir_name)
+            if os.path.exists(dir_path):
+                raise FileExistsError(f'{dir_path} is already exists')
             os.makedirs(dir_path, exist_ok=True)
 
             # ハイパーパラメーター、学習時間などの情報をテキストファイルに書き込み、保存
@@ -54,7 +56,7 @@ class Utils:
                 Utils.saveImages(image_dir, images)
 
         except Exception as e:
-            print(f'エラーが発生しました：{e}')
+            print(f'Error: {e}')
 
     @staticmethod
     def saveModelParameter(dir_path: str, model: nn.Module) -> None:
@@ -97,7 +99,7 @@ class Utils:
         # 画像を個々に保存する
         for i, image in enumerate(images):
             fig = plt.figure(facecolor="gray")
-            file_name = os.path.join(dir_path, f'/pic{i+1}.png')
+            file_name = os.path.join(dir_path, f'pic{i+1}.png')
             plt.imshow(image)
             plt.axis("off")
             plt.savefig(file_name)
@@ -106,7 +108,7 @@ class Utils:
 
     @staticmethod
     def concat_images(dir_path: str, images, rows: int=2, cols: int=10) -> None:
-        file_name: str = os.path.join(dir_path, f'/catpic1_{rows * cols}.png')
+        file_name: str = os.path.join(dir_path, f'catpic1_{rows * cols}.png')
         fig = plt.figure(figsize=(cols, rows), facecolor='gray')
         i = 0
         for r in range(rows):
@@ -144,11 +146,14 @@ class Datasets(Dataset):
         return len(self.img_paths)
 
 if __name__ == "__main__":
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
-    # diff = Diffuser(device=device)
-    # model = Utils.loadModel("result/2025_01_20_14_23/trained_para.pth", Unet(), device=device)
-
-    # images = diff.sample(model, x_shape=(50, 3, 32, 32))
-    # Utils.recordResult(images=images)
+    # sample code: use of Utils.loadModel()
+    from diff import Diffuser
+    from models.unet import Unet
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    diff = Diffuser(device=device)
+    model = Utils.loadModel("result/2025_02_02_04_23/trained_para.pth", Unet(), device=device)
+    images = diff.sample(model, x_shape=(50, 3, 32, 32))
+    print(len(images))
+    Utils.recordResult(images=images)
     
-    Utils.recordResult()
+    # Utils.recordResult()

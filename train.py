@@ -17,7 +17,7 @@ network_file = inspect.getfile(Unet)
 dataset_name = "data/line_32x32" 
 batch_size = 128
 num_timesteps = 1000
-epochs = 200
+epochs = 500
 lr = 1e-3
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
@@ -75,7 +75,7 @@ for epoch in range(epochs):
 learning_time = time.time() - start_time
 
 # 画像を生成
-images = diffuser.sample(model, x_shape=(50, 3, 32, 32))
+images = diffuser.sample(model, x_shape=(200, 3, 32, 32))
 
 Utils.recordResult(
     model=model,
