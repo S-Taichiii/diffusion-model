@@ -8,6 +8,8 @@ from pathlib import Path
 from PIL import Image
 from torch.utils.data import Dataset
 from torch import nn
+from diff import Diffuser
+from models.unet import Unet
 # from models.unet2 import Unet
 # from diff import Diffuser
 
@@ -51,7 +53,7 @@ class Utils:
 
             # 生成画像を保存
             if images:
-                image_dir = os.path.join(dir_path, "generated_pic")
+                image_dir = os.path.join(dir_path, "generated_pic_arc")
                 os.makedirs(image_dir)
                 Utils.saveImages(image_dir, images)
 
@@ -121,6 +123,23 @@ class Utils:
         plt.savefig(file_name)
         plt.close()
 
+    @staticmethod
+    def generate(model_path: str, num: int):
+        # current directory上にgenerate_picディレクトリがない場合は作成
+        cd = os.getcwd()
+        result_dir = os.path.join(cd, "generate_pic")
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
+
+        image_dir = os.path.join(result_dir, "generated_pic")
+        os.makedirs(image_dir)
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        diff = Diffuser(device=device)
+        model = Utils.loadModel(model_path, Unet(), device=device)
+        images = diff.sample(model, x_shape=(num, 3, 32, 32))
+        Utils.saveImages(image_dir, images)
+
 class Datasets(Dataset):
     # パスとtransformの取得
     def __init__(self, img_dir, transform=None):
@@ -147,12 +166,11 @@ class Datasets(Dataset):
 
 if __name__ == "__main__":
     # sample code: use of Utils.loadModel()
-    from diff import Diffuser
-    from models.unet import Unet
+    model_path = "result/2025_02_02_04_23/trained_para.pth"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     diff = Diffuser(device=device)
-    model = Utils.loadModel("result/2025_02_02_04_23/trained_para.pth", Unet(), device=device)
-    images = diff.sample(model, x_shape=(50, 3, 32, 32))
+    model = Utils.loadModel(model_path, Unet(), device=device)
+    images = diff.sample(model, x_shape=(500, 3, 32, 32))
     print(len(images))
     Utils.recordResult(images=images)
     

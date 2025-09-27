@@ -14,10 +14,10 @@ from models.unet import Unet
 from utils import Utils, Datasets
 
 network_file = inspect.getfile(Unet)
-dataset_name = "data/line_32x32" 
+dataset_name = "data/circle_32x32" 
 batch_size = 128
 num_timesteps = 1000
-epochs = 500
+epochs = 200
 lr = 1e-3
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
