@@ -94,6 +94,55 @@ class Utils:
             writer.writerow(["最小値", min(losses)])
 
     @staticmethod
+    def saveTrainValLossGraph(dir_path: str, train_losses, val_losses, filename: str = "losses_train_val.png") -> None:
+        """
+        train_loss と val_loss を同じ図に描いて保存する。
+        長さが異なる場合は短い方に合わせて描画する。
+        """
+        os.makedirs(dir_path, exist_ok=True)
+        n = min(len(train_losses), len(val_losses))
+        if n == 0:
+            print("Warning: no data to plot (train/val losses are empty).")
+            return
+        if len(train_losses) != len(val_losses):
+            print(f"Note: train({len(train_losses)}) and val({len(val_losses)}) lengths differ; plotting first {n} epochs.")
+
+        x = list(range(1, n + 1))
+        plt.figure()
+        plt.plot(x, train_losses[:n], label="train_loss")
+        plt.plot(x, val_losses[:n], label="val_loss")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Train & Val Loss")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        out_path = os.path.join(dir_path, filename)
+        plt.savefig(out_path)
+        plt.close()
+
+    @staticmethod
+    def saveTrainValLossCsv(dir_path: str, train_losses, val_losses, filename: str = "losses_train_val.csv") -> None:
+        """
+        train/val の損失を 1 つの CSV にまとめて保存する。
+        長さが異なる場合は短い方に合わせる。
+        """
+        os.makedirs(dir_path, exist_ok=True)
+        n = min(len(train_losses), len(val_losses))
+        if n == 0:
+            print("Warning: no data to save (train/val losses are empty).")
+            return
+
+        out_path: str = os.path.join(dir_path, filename)
+        with open(out_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["epoch", "train_loss", "val_loss"])
+            for i in range(n):
+                writer.writerow([i + 1, train_losses[i], val_losses[i]])
+            writer.writerow(["min_train", min(train_losses[:n]), ""])
+            writer.writerow(["min_val", "", min(val_losses[:n])])
+
+    @staticmethod
     def saveImages(dir_path: str, images) -> None:
         # 画像をまとめて保存
         Utils.concat_images(dir_path, images)
