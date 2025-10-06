@@ -85,6 +85,14 @@ class Up(nn.Module):
 
     def forward(self, x, skip_x, t):
         x = self.up(x)
+
+        # feat：skip の H×W に合わせて “小さい側” を pad（6→7 などの 1px 差を吸収）
+        diffY = skip_x.size(2) - x.size(2)
+        diffX = skip_x.size(3) - x.size(3)
+        if diffY != 0 or diffX != 0:
+            x = F.pad(x, [max(0, diffX//2), max(0, diffX - diffX//2),
+                          max(0, diffY//2), max(0, diffY - diffY//2)])
+
         x = torch.cat([skip_x, x], dim=1)
         x = self.conv(x)
         emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
@@ -163,11 +171,11 @@ class Unet(nn.Module):
 
 
 if __name__== "__main__":
-    model = Unet(remove_deep_conv=True)
+    model = Unet(in_ch=4, remove_deep_conv=True)
     # sample data
     batch_size = 128
-    input_channel = 3
-    height, width = 32, 32
+    input_channel = 4
+    height, width = 28, 28
     x = torch.randn(batch_size, input_channel, height, width)
     t = torch.randn(batch_size)
     

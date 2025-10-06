@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import time
 import inspect
+import os
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.optim import Adam
@@ -11,19 +12,25 @@ from tqdm import tqdm
 
 from diff import Diffuser
 from models.unet import Unet
+from models.vae import VAE
 from utils import Utils, Datasets
 
-network_file = inspect.getfile(Unet)
-dataset_name = "data/circle_32x32" 
-batch_size = 128
-num_timesteps = 1000
-epochs = 200
-lr = 1e-3
+# ---------- Config ----------
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device}を使用しています")
 
+# Diffusion
+network_file = inspect.getfile(Unet)
+batch_size = 128
+num_timesteps = 1000
+unet_epochs = 200
+unet_lr = 1e-3
+
+# Data
+dataset_name = "data/circle_56x56" 
 preprocess = transforms.ToTensor()
 dataset = Datasets(dataset_name, preprocess)
+# vae_dataloader = DataLoader(dataset, batch_size=vae_batch_size, shuffle=True)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # diffuser = Diffuser(num_timesteps, device=device)
@@ -36,57 +43,58 @@ dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 torch.cuda.empty_cache()
 
+# ------------------ Diffusion ------------------
 diffuser = Diffuser(num_timesteps, device=device)
-model = Unet()
-model.to(device)
-optimizer = Adam(model.parameters(), lr=lr)
+unet = Unet(remove_deep_conv=True)
+unet.to(device)
+optimizer_unet = Adam(unet.parameters(), lr=unet_lr)
 
 start_time = time.time()
-losses = []
-for epoch in range(epochs):
+unet_losses = []
+for epoch in range(unet_epochs):
     loss_sum = 0.0
     cnt = 0
 
     # generate samples every epoch ===================
-    # images = diffuser.sample(model)
+    # images = diffuser.sample(unet)
     # show_images(images)
     # ================================================
 
     for images in tqdm(dataloader):
-        optimizer.zero_grad()
+        optimizer_unet.zero_grad()
         x = images.to(device)
         t = torch.randint(1, num_timesteps+1, (len(x),), device=device)
 
         x_noisy, noise = diffuser.add_noise(x, t)
-        noise_pred = model(x_noisy, t)
+        noise_pred = unet(x_noisy, t)
         loss = F.mse_loss(noise, noise_pred)
 
         loss.backward()
-        optimizer.step()
+        optimizer_unet.step()
 
         loss_sum += loss.item()
         cnt += 1
 
     loss_avg = loss_sum / cnt
-    losses.append(loss_avg)
+    unet_losses.append(loss_avg)
     print(f'Epoch {epoch} | Loss: {loss_avg}')
 
 # lerning time 
-learning_time = time.time() - start_time
+diffusion_learning_time = time.time() - start_time
 
 # 画像を生成
-images = diffuser.sample(model, x_shape=(200, 3, 32, 32))
+images = diffuser.sample(unet, x_shape=(200, 3, 56, 56))
 
 Utils.recordResult(
-    model=model,
-    losses=losses,
+    model=unet,
+    losses=unet_losses,
     images=images,
     batch_size=batch_size,
     num_timesteps=num_timesteps,
-    epochs=epochs,
-    learning_rate=lr,
+    epochs=unet_epochs,
+    learning_rate=unet_lr,
     device=device,
-    learning_time=learning_time,
+    learning_time=diffusion_learning_time,
     dataset_name=dataset_name,
     network_file=network_file
 )

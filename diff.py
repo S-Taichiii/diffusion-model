@@ -62,6 +62,16 @@ class Diffuser:
         return to_pil(x)
 
     def sample(self, model, x_shape=(20, 3, 80, 80)):
+        """
+        Diffusion 向けのサンプラ。
+
+        args: 
+        - model: 潜在空間上のU-Net（例：in_ch=4）
+        - x_shape: 生成する画像の形状 (B, C, H, W)。
+        
+        return:
+          - PIL.Image のリスト
+        """
         batch_size = x_shape[0]
         x = torch.randn(x_shape, device=self.device)
 
@@ -71,3 +81,43 @@ class Diffuser:
             
         images = [self.reverse_to_img(x[i]) for i in range(batch_size)]
         return images
+
+    def sample_latent(self, model, z_shape=(1000, 4, 28, 28), vae=None, to_pil=True, progress=True):
+        """
+        Latent Diffusion 向けのサンプラ。
+
+        args: 
+        - model: 潜在空間上のU-Net（例：in_ch=4）
+        - z_shape: 生成する潜在の形状 (B, C, H, W)。例：(16, 4, 28, 28)
+        - vae: VAE インスタンス（decode(z) が [0,1] 画像Tensorを返す想定）。Noneなら潜在を返す
+        - to_pil: True の場合、画像Tensorを PIL.Image のリストに変換して返す（vae が必要）
+        - progress: tqdm の進捗表示
+        
+        return:
+          - vae が None のとき: z (Tensor, shape=z_shape)
+          - vae がある & to_pil=False: imgs (Tensor, shape=(B,3,H*8,W*8) 程度)
+          - vae がある & to_pil=True: PIL.Image のリスト
+        """
+        batch_size = z_shape[0]
+        x = torch.randn(z_shape, device=self.device)
+
+        step_iter = range(self.num_timesteps, 0, -1)
+        if progress:
+            step_iter = tqdm(step_iter)
+        
+        with torch.no_grad():
+            for i in step_iter:
+                t = torch.tensor([i] * batch_size, device=self.device, dtype=torch.long)
+                x = self.denoise(model, x, t) # 潜在空間で逆拡散
+
+        # 画像に戻さず潜在を返す場合
+        if vae is None:
+            return x
+
+        # 画像へデコード（VAE.decode 内で scale_factor を戻し、sigmoidで[0,1]化する想定）
+        images = vae.decode(x)
+
+        if to_pil:
+            return [self.reverse_to_img(images[i]) for i in range(batch_size)]
+        else:
+            return images
