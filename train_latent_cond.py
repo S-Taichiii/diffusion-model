@@ -7,7 +7,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from diff import Diffuser
-from models.unet import Unet
+from models.unet_cond import UnetCond
 from models.vae import VAE
 
 # データセット（train_vae.pyで使っていたやつ）
@@ -19,14 +19,14 @@ from utils import Utils
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"device: {device} を使用しています")
 
-# 画像サイズと潜在サイズ
-z_ch = 4
 
 # 学習設定
 batch_size = 128
 epochs = 100
 lr = 1e-4
 num_timesteps = 1000
+z_ch = 4 # 潜在サイズ
+cfg_drop_prob = 0.1 # classifier-free dropout during traing
 
 # データセット（train_vae.pyと同じitemsを再利用）
 base = r"D:/2024_Satsuka/github/DiffusionModel/data"
@@ -34,7 +34,7 @@ arc_dir = "arc_224x224"
 line_dir = "line_224x224"
 circle_dir = "circle_224x224"
 items = [
-    (fr"{base}\{arc_dir}\arc_224x224_caption.csv", fr"{base}\{arc_dir}", 0),
+    (fr"{base}\{arc_dir}\arc_224x224_caption.csv", fr"{base}\{arc_dir}", 3),
     (fr"{base}\{line_dir}\line_224x224_caption.csv", fr"{base}\{line_dir}", 1),
     (fr"{base}\{circle_dir}\circle_224x224_caption.csv", fr"{base}\{circle_dir}", 2),
 ]
@@ -58,7 +58,7 @@ for p in vae.parameters():
     p.requires_grad = False  # 凍結。VAEに勾配を流さない（計算グラフも作られずにメモリ節約）
 
 # 潜在用のU-Net（入力チャネル=4）
-model = Unet(in_ch=z_ch)  # 既存Unetをin_ch=4でインスタンス化
+model = UnetCond(in_ch=z_ch, num_classes=3, cfg_drop_prob=cfg_drop_prob)
 model.to(device)
 
 optimizer = Adam(model.parameters(), lr=lr)
@@ -73,20 +73,21 @@ for epoch in range(1, epochs+1):
     loss_sum, cnt = 0.0, 0
 
     # non_blocking=True + Dataloaderのpin_memory=True: CPU -> GPU転送を非同期化して高速化
-    for images, _, _ in tqdm(dataloader):
+    for images, _, class_names in tqdm(dataloader):
         images = images.to(device, non_blocking=True)
+        class_names = class_names.to(device).long()
 
         # 画像→潜在（スケール済みzが返る）
         # VAEは固定なので計算グラフ不要.メモリ節約＆高速化
         with torch.no_grad():
-            z, _kl = vae.encode(images)   # z: (B, 4, H/8, W/8)
+            z, _ = vae.encode(images)   # z: (B, 4, H/8, W/8)
 
         # 時刻をサンプリングして潜在にノイズを付与
         t = torch.randint(1, num_timesteps+1, (len(z),), device=device)
         z_noisy, noise = diffuser.add_noise(z, t)
 
         # U-Netは潜在上のノイズを予測
-        noise_pred = model(z_noisy, t)
+        noise_pred = model(z_noisy, t, class_names)
 
         loss = F.mse_loss(noise_pred, noise)
 
@@ -107,7 +108,10 @@ learning_time = time.time() - start
 # ---------------- sampling ----------------
 images = None
 try: 
-    images = diffuser.sample_latent(model, vae=vae, to_pil=True)
+    images = diffuser.sample_latent_cond(model,
+                                         class_counts={1:100},
+                                         vae=vae,
+                                         to_pil=True)
 except Exception as e:
     print(f"Sampling failed, continue without images: {e}")
 
@@ -123,5 +127,6 @@ Utils.recordResult(
     device=device,
     learning_time=learning_time,
     dataset_name=f"{arc_dir}\n{line_dir}\n{circle_dir}",
-    network_file=inspect.getfile(Unet),
+    network_file=inspect.getfile(UnetCond),
+    generate_image="1:直線 100枚",
 )

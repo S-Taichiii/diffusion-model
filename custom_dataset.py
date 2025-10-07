@@ -25,7 +25,7 @@ class ClipDataset(Dataset):
         self.strict_images = strict_images
 
         self.dataset = []
-        for (csv_path, image_dir, _) in dataset_path:
+        for (csv_path, image_dir, class_name) in dataset_path:
             df = pd.read_csv(csv_path)
             base = Path(image_dir)
             for _, row in df.iterrows():
@@ -38,7 +38,7 @@ class ClipDataset(Dataset):
                         raise FileNotFoundError(f"Missing image: {path}")
                     else:
                         continue
-                self.dataset.append((str(path), text))
+                self.dataset.append((str(path), text, class_name))
         
         if len(self.dataset) == 0:
             raise RuntimeError("No sample collected. Check paths and csv columns")
@@ -48,6 +48,6 @@ class ClipDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        path, text = self.dataset[idx]
+        path, text, class_name = self.dataset[idx]
         image = self.preprocess(Image.open(path).convert("RGB"))
-        return image, text
+        return image, text, class_name

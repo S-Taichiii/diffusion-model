@@ -67,8 +67,10 @@ class Utils:
     
     @staticmethod
     def loadModel(path: str, model: nn.Module, device='cpu') -> nn.Module:
+        """modelはインスタンスを入力しないとエラーになる"""
+        model.load_state_dict(torch.load(path, map_location=device))
         model.to(device=device)
-        model.load_state_dict(torch.load(path))
+        model.eval()
         return model
 
     @staticmethod
@@ -189,29 +191,6 @@ class Utils:
         images = diff.sample(model, x_shape=(num, 3, 32, 32))
         Utils.saveImages(image_dir, images)
 
-class Datasets(Dataset):
-    # パスとtransformの取得
-    def __init__(self, img_dir, transform=None):
-        self.img_paths = self._get_img_paths(img_dir)
-        self.transform = transform
-
-    # データの取得
-    def __getitem__(self, index): 
-        path = self.img_paths[index]
-        img= Image.open(path)
-        if self.transform is not None:
-            img = self.transform(img)
-        return img
-
-    # パスの取得
-    def _get_img_paths(self, img_dir):
-        img_dir = Path(img_dir)
-        img_paths = [path for path in img_dir.iterdir() if path.suffix == ".jpg"]
-        return img_paths
-
-    # データの数を取得
-    def __len__(self):
-        return len(self.img_paths)
 
 if __name__ == "__main__":
     # sample code: use of Utils.loadModel()
