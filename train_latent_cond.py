@@ -11,7 +11,7 @@ from models.unet_cond import UnetCond
 from models.vae import VAE
 
 # データセット（train_vae.pyで使っていたやつ）
-from custom_dataset import ClipDataset
+from custom_dataset import LabelDataset
 
 from utils import Utils
 
@@ -22,7 +22,7 @@ print(f"device: {device} を使用しています")
 
 # 学習設定
 batch_size = 128
-epochs = 100
+epochs = 200
 lr = 1e-4
 num_timesteps = 1000
 z_ch = 4 # 潜在サイズ
@@ -34,15 +34,15 @@ arc_dir = "arc_224x224"
 line_dir = "line_224x224"
 circle_dir = "circle_224x224"
 items = [
-    (fr"{base}\{arc_dir}\arc_224x224_caption.csv", fr"{base}\{arc_dir}", 3),
-    (fr"{base}\{line_dir}\line_224x224_caption.csv", fr"{base}\{line_dir}", 1),
-    (fr"{base}\{circle_dir}\circle_224x224_caption.csv", fr"{base}\{circle_dir}", 2),
+    (fr"{base}\{arc_dir}\arc_224x224.csv", fr"{base}\{arc_dir}", 3),
+    (fr"{base}\{line_dir}\line_224x224.csv", fr"{base}\{line_dir}", 1),
+    (fr"{base}\{circle_dir}\circle_224x224.csv", fr"{base}\{circle_dir}", 2),
 ]
 
 # ToTensor() は [0,1] 範囲のfloat化。VAEがその前提になっているのでOK
 preprocess = transforms.ToTensor()
 
-dataset = ClipDataset(items, preprocess)
+dataset = LabelDataset(items, preprocess)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # ---------------- Models ----------------
@@ -73,8 +73,10 @@ for epoch in range(1, epochs+1):
     loss_sum, cnt = 0.0, 0
 
     # non_blocking=True + Dataloaderのpin_memory=True: CPU -> GPU転送を非同期化して高速化
-    for images, _, class_names in tqdm(dataloader):
+    for images, vals, mask, class_names in tqdm(dataloader):
         images = images.to(device, non_blocking=True)
+        vals = vals.to(device, non_blocking=True)
+        mask = mask.to(device, non_blocking=True)
         class_names = class_names.to(device).long()
 
         # 画像→潜在（スケール済みzが返る）
@@ -87,7 +89,7 @@ for epoch in range(1, epochs+1):
         z_noisy, noise = diffuser.add_noise(z, t)
 
         # U-Netは潜在上のノイズを予測
-        noise_pred = model(z_noisy, t, class_names)
+        noise_pred = model(z_noisy, t, class_names, cond_vals=vals, cond_mask=mask)
 
         loss = F.mse_loss(noise_pred, noise)
 

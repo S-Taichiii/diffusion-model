@@ -147,16 +147,12 @@ class Utils:
     @staticmethod
     def saveImages(dir_path: str, images) -> None:
         # 画像をまとめて保存
-        Utils.concat_images(dir_path, images)
+        # Utils.concat_images(dir_path, images)
 
         # 画像を個々に保存する
         for i, image in enumerate(images):
-            fig = plt.figure(facecolor="gray")
             file_name = os.path.join(dir_path, f'pic{i+1}.png')
-            plt.imshow(image)
-            plt.axis("off")
-            plt.savefig(file_name)
-            plt.close()
+            image.save(file_name)
 
 
     @staticmethod
