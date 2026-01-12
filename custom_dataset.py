@@ -73,14 +73,21 @@ class LabelDataset(Dataset):
             image_prefix='p',
             image_ext = '.jpg',
             image_size = (224, 224),
+            drawing_size = (400, 280),
             return_as = 'tuple'
     ):
 
         self.image_prefix = image_prefix
         self.image_ext = image_ext
         self.preprocess = preprocess
-        self.strict_images = strict_images
+        self.strict_images = strict_images,
+        self.drawing_size_x, self.drawing_size_y = drawing_size
         self.W, self.H = image_size
+
+        # 図面→画像の倍率
+        self.sx = self.W / self.drawing_size_x
+        self.sy = self.H / self.drawing_size_y
+
         self.return_as = return_as
         self.col_ranges_based = {
             1: (1, 5),
@@ -89,6 +96,19 @@ class LabelDataset(Dataset):
         }
 
         self.dataset: List[Tuple[str, Union[List, Tuple], int]] = []
+
+        # --- 図面座標 → 画像座標（convert_cood相当） ---
+        def to_img_xy(x_draw: float, y_draw: float):
+            x_img = x_draw * self.sx
+            y_img = (self.drawing_size_y - y_draw) * self.sy  # ★Y反転
+            return x_img, y_img
+
+        # --- 図面半径 → 画像半径 ---
+        # 円を円として扱うなら等方スケールが必要だが、あなたの描画は sx,sy が効く座標系なので
+        # ここでは sx を代表として採用（drawingとimgの縦横比が一致している前提で自然）
+        def to_img_r(r_draw: float):
+            return r_draw * self.sx
+
 
         for (csv_path, image_dir, class_id) in dataset_path:
             df = pd.read_csv(csv_path, header=None)
@@ -111,28 +131,38 @@ class LabelDataset(Dataset):
 
                 # CSV → キーに対応する列インデックスの取り方はあなたの定義に合わせる
                 # 例として：直線(1):(1..4), 円(2):(5..7), 弧(3):(8..12) のような既存ルールをマッピング
-                if class_id == 1:   # line: x1,y1,x2,y2
-                    raw = row[1:5].astype('float32').tolist()
-                    x1,y1,x2,y2 = raw
-                    vals[self.KEY_INDEX["x1"]] = x1 / self.W
-                    vals[self.KEY_INDEX["y1"]] = y1 / self.H
-                    vals[self.KEY_INDEX["x2"]] = x2 / self.W
-                    vals[self.KEY_INDEX["y2"]] = y2 / self.H
-                elif class_id == 2: # circle: cx,cy,r
-                    raw = row[5:8].astype('float32').tolist()
-                    cx,cy,r = raw
-                    vals[self.KEY_INDEX["cx"]] = cx / self.W
-                    vals[self.KEY_INDEX["cy"]] = cy / self.H
-                    vals[self.KEY_INDEX["cr"]]  = r  / max(self.W,self.H)
-                elif class_id == 3: # arc: cx,cy,r,theta1,theta2
-                    raw = row[8:13].astype('float32').tolist()
-                    cx,cy,r,t1,t2 = raw
-                    vals[self.KEY_INDEX["ax"]] = cx / self.W
-                    vals[self.KEY_INDEX["ay"]] = cy / self.H
-                    vals[self.KEY_INDEX["ar"]]  = r  / max(self.W,self.H)
-                    # 角度は 0-360 を 0-1 に正規化（または -π..π を -1..1）
+                if class_id == 1:  # line: x1,y1,x2,y2（図面）
+                    x1, y1, x2, y2 = row[1:5].astype("float32").tolist()
+                    x1i, y1i = to_img_xy(x1, y1)
+                    x2i, y2i = to_img_xy(x2, y2)
+
+                    vals[self.KEY_INDEX["x1"]] = x1i
+                    vals[self.KEY_INDEX["y1"]] = y1i
+                    vals[self.KEY_INDEX["x2"]] = x2i
+                    vals[self.KEY_INDEX["y2"]] = y2i
+
+                elif class_id == 2:  # circle: cx,cy,r（図面）
+                    cx, cy, r = row[5:8].astype("float32").tolist()
+                    cxi, cyi = to_img_xy(cx, cy)
+                    ri = to_img_r(r)
+
+                    vals[self.KEY_INDEX["cx"]] = cxi
+                    vals[self.KEY_INDEX["cy"]] = cyi
+                    vals[self.KEY_INDEX["cr"]] = ri
+
+                elif class_id == 3:  # arc: cx,cy,r,theta1,theta2（図面）
+                    ax, ay, r, t1, t2 = row[8:13].astype("float32").tolist()
+                    axi, ayi = to_img_xy(ax, ay)
+                    ri = to_img_r(r)
+
+                    vals[self.KEY_INDEX["ax"]] = axi
+                    vals[self.KEY_INDEX["ay"]] = ayi
+                    vals[self.KEY_INDEX["ar"]] = ri
+
+                    # 角度は画像座標化ではないので表現だけ整える
                     vals[self.KEY_INDEX["theta1"]] = t1 / 360.0
                     vals[self.KEY_INDEX["theta2"]] = t2 / 360.0
+
 
                 # mask（このクラスで使用するキーのみ 1）
                 for k in self.CLASS_KEYS.get(class_id, []):
