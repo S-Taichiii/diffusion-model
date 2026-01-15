@@ -5,6 +5,7 @@ import os, datetime
 import torch
 
 from models.unet_cond import UnetCond
+from models.unet_cond_geom import UnetCondWithGeomHead
 from models.vae import VAE
 from utils import Utils
 from diff import Diffuser
@@ -28,22 +29,25 @@ os.makedirs(circle_dir, exist_ok=True)
 arc_dir = os.path.join(out_dir, "arc")
 os.makedirs(arc_dir, exist_ok=True)
 
+print("directoryを作成しました")
+
 # 条件付きlatent diffusionの学習済みパラメーターのパス
-unet_cond_ckpt = "./result/2025_11_07_14_46/trained_para.pth"
+# unet_cond_ckpt = "./result/2026_01_15_13_51/trained_para.pth"
+unet_cond_ckpt = "./model_para/trained_para.pth"
 # VAEの学習済みパラメーターのパス
 vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device}")
 
-unet = Utils.loadModel(unet_cond_ckpt, UnetCond(), device=device)
+unet = Utils.loadModel(unet_cond_ckpt, UnetCondWithGeomHead(), device=device)
 vae = Utils.loadModel(vae_ckpt, VAE(), device=device)
 
 num_timesteps = 1000
 diffuser = Diffuser(num_timesteps=num_timesteps, device=device)
 
 # 生成する画像の枚数（各エンティティこの数生成）
-image_count = 500
+image_count = 100
 
 sampler = EntityCsvSampler(
     diffuser=diffuser,

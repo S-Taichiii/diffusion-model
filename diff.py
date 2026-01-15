@@ -146,8 +146,8 @@ class Diffuser:
         with torch.no_grad():
             if guidance_scale and y is not None and guidance_scale > 0:
                 y_null = torch.full_like(y, null_label)
-                eps_uncond = model(x, t, y_null, cond_vals=cond_vals, cond_mask=cond_mask)
-                eps_cond = model(x, t, y, cond_vals=cond_vals, cond_mask=cond_mask)
+                eps_uncond, _ = model(x, t, y_null, cond_vals=cond_vals, cond_mask=cond_mask)
+                eps_cond, _ = model(x, t, y, cond_vals=cond_vals, cond_mask=cond_mask)
                 eps = eps_uncond + guidance_scale * (eps_cond - eps_uncond)
             else:
                 # plain conditional/unconditional
@@ -170,116 +170,6 @@ class Diffuser:
             t = torch.full((batch_size,), i, device=self.device, dtype=torch.long)
             x = self.denoise_cond(model, x, t, y=y, guidance_scale=guidance_scale, null_label=null_label)
         return x
-
-
-    # def sample_latent_cond(
-    #     self,
-    #     model,
-    #     class_counts: Union[Dict[int, int], Tuple[int, int], List[Tuple[int, int]]],
-    #     z_shape: Tuple[int, int, int] = None,   # (C, H, W) ※image_numはclass_countsから自動
-    #     vae=None,
-    #     to_pil: bool = True,
-    #     progress: bool = True,
-    #     guidance_scale: float = 3.0,
-    #     null_label: int = 0,
-    #     dummy_input_hw: Tuple[int, int] = (224, 224),  # VAEから潜在形状を推定する際の入力解像度
-    # ):
-    #     """
-    #     Latent Diffusion 向け 条件付きサンプリング（クラスと枚数で指定）。
-    #     例: class_counts={1:8, 2:8, 3:8} → 各クラス8枚ずつ生成
-
-    #     args:
-    #     - model: 潜在空間上の条件付きU-Net（forward(x, t, y)）
-    #     - class_counts:
-    #         * dict: {class_id: num, ...}（class_idは 1=line, 2=circle, 3=arc を推奨 / 0はuncond用）
-    #         * または (class_id, num) のタプル、あるいはそれらのリスト
-    #     - z_shape: 生成潜在の (C, H, W)。未指定なら VAE から自動推定（vae が必要）
-    #     - vae: VAE インスタンス（decode(z)->[0,1] Tensor）
-    #     - to_pil: Trueなら PIL.Image のリストを返す
-    #     - progress: tqdm 進捗表示
-    #     - guidance_scale: CFGの強さ（0で無効）
-    #     - null_label: 無条件用ラベルID（通常0）
-    #     - dummy_input_hw: VAE潜在形状推定に使うダミー画像サイズ（既定224x224）
-
-    #     return:
-    #     - vae が None: z (Tensor, shape=(image_num,C,H,W))
-    #     - vae あり & to_pil=False: images Tensor (image_num,3,H_img,W_img)
-    #     - vae あり & to_pil=True: List[PIL.Image]
-    #     """
-
-    #     device = self.device
-
-    #     # ---- class_counts の正規化 ----
-    #     def _norm_counts(cc):
-    #         if isinstance(cc, dict):
-    #             items = list(cc.items())
-    #         elif isinstance(cc, tuple) and len(cc) == 2:
-    #             items = [cc]
-    #         elif isinstance(cc, list):
-    #             items = list(cc)
-    #         else:
-    #             raise ValueError("class_counts は {cls: num} 辞書、(cls,num) タプル、またはそのリストで指定してください。")
-    #         # フィルタ: num<=0 を除外
-    #         items = [(int(c), int(n)) for c, n in items if int(n) > 0]
-    #         if not items:
-    #             raise ValueError("生成枚数が0です。class_countsを見直してください。")
-    #         return items
-
-    #     items = _norm_counts(class_counts)
-
-    #     # ---- バッチ用 y ベクトルを組み立て（例: [1,1,1,2,2,3,3,3,...]）----
-    #     y_list: List[int] = []
-    #     for cls, num in items:
-    #         y_list += [cls] * num
-    #     image_num = len(y_list)
-    #     y = torch.tensor(y_list, device=device, dtype=torch.long)
-
-    #     # ---- 潜在の (C,H,W) 決定 ----
-    #     if z_shape is None:
-    #         if vae is None:
-    #             raise ValueError("z_shape を省略する場合は vae が必要です。")
-    #         with torch.no_grad():
-    #             H, W = dummy_input_hw
-    #             dummy = torch.zeros(1, 3, H, W, device=device)
-    #             z, _ = vae.encode(dummy)  # (1, C, H', W')
-    #             C, Hlat, Wlat = z.shape[1:]
-    #     else:
-    #         C, Hlat, Wlat = z_shape
-
-    #     # ---- 逆拡散ループ（CFG対応）----
-    #     x = torch.randn((image_num, C, Hlat, Wlat), device=device)
-
-    #     step_iter: Iterable[int] = range(self.num_timesteps, 0, -1)
-    #     if progress:
-    #         step_iter = tqdm(step_iter, desc="Sampling (cond)")
-
-    #     with torch.no_grad():
-    #         for i in step_iter:
-    #             t = torch.full((image_num,), i, device=device, dtype=torch.long)
-
-    #             # 無条件(0)と条件(y)の差分を guidance_scale で強調
-    #             x = self.denoise_cond(
-    #                 model=model,
-    #                 x=x,
-    #                 t=t,
-    #                 y=y,
-    #                 guidance_scale=guidance_scale,
-    #                 null_label=null_label,
-    #             )
-
-    #     # ---- 画像に戻さず潜在を返す場合 ----
-    #     if vae is None:
-    #         return x
-
-    #     # ---- VAEでデコード
-    #     images = vae.decode(x)  # (image_num,3,H_img,W_img), 値域[0,1]
-
-    #     if to_pil:
-    #         # reverse_to_img は既存の画像復元ヘルパ（[0,1]Tensor -> PIL）を想定
-    #         return [self.reverse_to_img(images[i]) for i in range(image_num)]
-    #     else:
-    #         return images
-
 
     def sample_latent_cond(
         self,

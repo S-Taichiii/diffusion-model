@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from typing import Optional, Tuple, Dict
+from diff import Diffuser
 
 class EntityCsvSampler:
     """
@@ -27,11 +28,11 @@ class EntityCsvSampler:
 
     def __init__(
         self,
-        diffuser,
+        diffuser: Diffuser,
         model,
         vae,
         class_id: int = 1,
-        base_wh: Optional[Tuple[float, float]] = None,
+        base_wh: Optional[Tuple[float, float]] = (400, 400), # 図面サイズ
         device: Optional[torch.device] = None,
     ):
         self.diffuser = diffuser
@@ -67,6 +68,7 @@ class EntityCsvSampler:
         mask = torch.from_numpy(cond_mask_np[start:end]).float().to(self.device)
 
         N = vals.shape[0]
+
         return self.diffuser.sample_latent_cond(
             model=self.model,
             class_counts=(self.class_id, N),  # 単一クラス前提
@@ -102,48 +104,64 @@ class EntityCsvSampler:
         class_id: int,
         base_wh: Optional[Tuple[float, float]],
     ) -> Tuple[np.ndarray, np.ndarray]:
-        W, H = base_wh if base_wh is not None else self._infer_base_wh(df, class_id)
+        # ここでの W,H は「図面(drawing)の幅・高さ」を意味させる（LabelDatasetのdrawW, drawHに相当）
+        drawW, drawH = base_wh if base_wh is not None else self._infer_base_wh(df, class_id)  # [FIX] 意味を明確化
         B, K = len(df), len(self.KEY_ORDER)
         vals = np.zeros((B, K), dtype=np.float32)
         mask = np.zeros((B, K), dtype=np.float32)
 
+        # [ADD] LabelDatasetと同じ正規化（図面→画像→0-1 の結果と一致）
+        #  ※縦横比が同じ想定なら、画像サイズ(224)は消えて x/drawW, 1-y/drawH になる
+        def norm_x_from_draw(x_draw: np.ndarray) -> np.ndarray:
+            x_draw = x_draw.astype(np.float32)
+            return x_draw / np.float32(drawW)
+
+        def norm_y_from_draw(y_draw: np.ndarray) -> np.ndarray:
+            y_draw = y_draw.astype(np.float32)
+            return 1.0 - (y_draw / np.float32(drawH))  # LabelDatasetのY反転と一致
+
+        def norm_r_from_draw(r_draw: np.ndarray) -> np.ndarray:
+            r_draw = r_draw.astype(np.float32)
+            # LabelDataset: r_img = r_draw * sx, norm_r = r_img / W_img
+            # sx = W_img/drawW なので r_draw*(W_img/drawW)/W_img = r_draw/drawW
+            return r_draw / np.float32(drawW)
+
         if class_id == 1:
             # line: x1,y1,x2,y2
-            vals[:, self.IDX["x1"]] = (df[1].to_numpy(dtype=np.float32) / W)
-            vals[:, self.IDX["y1"]] = (df[2].to_numpy(dtype=np.float32) / H)
-            vals[:, self.IDX["x2"]] = (df[3].to_numpy(dtype=np.float32) / W)
-            vals[:, self.IDX["y2"]] = (df[4].to_numpy(dtype=np.float32) / H)
-            for k in ["x1","y1","x2","y2"]:
+            vals[:, self.IDX["x1"]] = norm_x_from_draw(df[1].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["y1"]] = norm_y_from_draw(df[2].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["x2"]] = norm_x_from_draw(df[3].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["y2"]] = norm_y_from_draw(df[4].to_numpy(dtype=np.float32))  # [FIX]
+            for k in ["x1", "y1", "x2", "y2"]:
                 mask[:, self.IDX[k]] = 1.0
 
         elif class_id == 2:
             # circle: cx,cy,cr
-            vals[:, self.IDX["cx"]] = (df[5].to_numpy(dtype=np.float32) / W)
-            vals[:, self.IDX["cy"]] = (df[6].to_numpy(dtype=np.float32) / H)
-            denom = float(max(W, H))
-            vals[:, self.IDX["cr"]] = (df[7].to_numpy(dtype=np.float32) / denom)
-            for k in ["cx","cy","cr"]:
+            vals[:, self.IDX["cx"]] = norm_x_from_draw(df[5].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["cy"]] = norm_y_from_draw(df[6].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["cr"]] = norm_r_from_draw(df[7].to_numpy(dtype=np.float32))  # [FIX]
+            for k in ["cx", "cy", "cr"]:
                 mask[:, self.IDX[k]] = 1.0
 
         elif class_id == 3:
             # arc: ax,ay,ar,theta1,theta2
-            vals[:, self.IDX["ax"]] = (df[8].to_numpy(dtype=np.float32)  / W)
-            vals[:, self.IDX["ay"]] = (df[9].to_numpy(dtype=np.float32)  / H)
-            denom = float(max(W, H))
-            vals[:, self.IDX["ar"]] = (df[10].to_numpy(dtype=np.float32) / denom)
+            vals[:, self.IDX["ax"]] = norm_x_from_draw(df[8].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["ay"]] = norm_y_from_draw(df[9].to_numpy(dtype=np.float32))  # [FIX]
+            vals[:, self.IDX["ar"]] = norm_r_from_draw(df[10].to_numpy(dtype=np.float32))  # [FIX]
 
             th1 = df[11].to_numpy(dtype=np.float32)
             th2 = df[12].to_numpy(dtype=np.float32)
-            vals[:, self.IDX["theta1"]] = self._norm_angle_vec(th1)
+            vals[:, self.IDX["theta1"]] = self._norm_angle_vec(th1)  # 0..1化（度→/360）でOK
             vals[:, self.IDX["theta2"]] = self._norm_angle_vec(th2)
 
-            for k in ["ax","ay","ar","theta1","theta2"]:
+            for k in ["ax", "ay", "ar", "theta1", "theta2"]:
                 mask[:, self.IDX[k]] = 1.0
 
         else:
             raise ValueError("class_id must be 1(line), 2(circle), or 3(arc).")
 
         return vals, mask
+
 
     # ===== 内部：前処理ユーティリティ ========================================
     @staticmethod
