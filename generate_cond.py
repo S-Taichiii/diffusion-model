@@ -32,8 +32,7 @@ os.makedirs(arc_dir, exist_ok=True)
 print("directoryを作成しました")
 
 # 条件付きlatent diffusionの学習済みパラメーターのパス
-# unet_cond_ckpt = "./result/2026_01_15_13_51/trained_para.pth"
-unet_cond_ckpt = "./model_para/trained_para.pth"
+unet_cond_ckpt = "./result/2026_01_17_19_47/model_para/trained_para.pth"
 # VAEの学習済みパラメーターのパス
 vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 

@@ -102,7 +102,8 @@ class LabelDataset(Dataset):
 
             # 画像名のゼロパディング（基本はCSVの行数から推定するのが安全）
             num_rows = len(df)
-            zero_pad = max(1, len(str(num_rows - 1)))
+            # zero_pad = max(1, len(str(num_rows - 1)))
+            zero_pad = 5
 
             for i, row in df.iterrows():
                 img_name = f"{self.image_prefix}{str(i).zfill(zero_pad)}{self.image_ext}"
@@ -200,11 +201,11 @@ if __name__ == "__main__":
     base = r"D:/2024_Satsuka/github/DiffusionModel/data"
     arc_dir = "arc_224x224"
     line_dir = "line_224x224"
-    circle_dir = "circle_224x224"
+    circle_dir = "circle_224x224_val"
     items = [
         # (fr"{base}\{arc_dir}\arc_224x224.csv", fr"{base}\{arc_dir}", 3),
         # (fr"{base}\{line_dir}\line_224x224.csv", fr"{base}\{line_dir}", 1),
-        (fr"{base}\{circle_dir}\circle_224x224.csv", fr"{base}\{circle_dir}", 2),
+        (fr"{base}\{circle_dir}\circle_224x224_val.csv", fr"{base}\{circle_dir}", 2),
     ]
 
     batch_size=126

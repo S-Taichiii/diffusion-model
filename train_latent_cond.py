@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torchvision import transforms
 from tqdm import tqdm
+import numpy as np
 
 from diff import Diffuser
 from models.vae import VAE
@@ -26,36 +27,48 @@ def main():
 
     # 学習設定
     batch_size = 32
-    epochs = 100
+    epochs = 200
     lr = 1e-4
     num_timesteps = 1000
     z_ch = 4 # 潜在サイズ
     cfg_drop_prob = 0.1 # classifier-free dropout during traing
 
     # [ADD] 回帰ヘッド損失の重み（最初は小さめ推奨）
-    geom_lambda = 0.05
+    geom_lambda = 0.01
 
     # [ADD] cond_vals の次元（あなたのデータに合わせて要調整）
     # 例：直線/円/円弧で共通ベクトルを12次元にしているなら 12
     geom_dim = 12
 
+    # ToTensor() は [0,1] 範囲のfloat化。VAEがその前提になっているのでOK
+    preprocess = transforms.ToTensor()
 
-    # データセット（train_vae.pyと同じitemsを再利用）
+    # データセット
+    # train
     base = r"D:/2024_Satsuka/github/DiffusionModel/data"
     arc_dir = "arc_224x224"
     line_dir = "line_224x224"
     circle_dir = "circle_224x224"
-    items = [
+    train_items = [
         (fr"{base}\{arc_dir}\arc_224x224.csv", fr"{base}\{arc_dir}", 3),
         (fr"{base}\{line_dir}\line_224x224.csv", fr"{base}\{line_dir}", 1),
         (fr"{base}\{circle_dir}\circle_224x224.csv", fr"{base}\{circle_dir}", 2),
     ]
+    train_dataset = LabelDataset(train_items, preprocess)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=0, pin_memory=False, shuffle=True)
 
-    # ToTensor() は [0,1] 範囲のfloat化。VAEがその前提になっているのでOK
-    preprocess = transforms.ToTensor()
-
-    dataset = LabelDataset(items, preprocess)
-    dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0, pin_memory=False, shuffle=True)
+    # val
+    base = r"D:/2024_Satsuka/github/DiffusionModel/data"
+    arc_dir = "arc_224x224_val"
+    line_dir = "line_224x224_val"
+    circle_dir = "circle_224x224_val"
+    train_items = [
+        (fr"{base}\{arc_dir}\arc_224x224_val.csv", fr"{base}\{arc_dir}", 3),
+        (fr"{base}\{line_dir}\line_224x224_val.csv", fr"{base}\{line_dir}", 1),
+        (fr"{base}\{circle_dir}\circle_224x224_val.csv", fr"{base}\{circle_dir}", 2),
+    ]
+    val_dataset = LabelDataset(train_items, preprocess)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=0, pin_memory=False, shuffle=False)
 
     os.makedirs("./model_para", exist_ok=True)
 
@@ -88,7 +101,9 @@ def main():
 
     # ---------------- Train Loop ----------------
     start = time.time()
-    losses = []
+    train_losses = []
+    val_losses = []
+    val_interval = 5
 
     for epoch in range(1, epochs+1):
         model.train()
@@ -96,7 +111,7 @@ def main():
         max_loss = float('inf')
 
         # non_blocking=True + Dataloaderのpin_memory=True: CPU -> GPU転送を非同期化して高速化
-        for images, vals, mask, class_names in tqdm(dataloader):
+        for images, vals, mask, class_names in tqdm(train_loader):
             images = images.to(device, non_blocking=False)
             vals = vals.to(device, non_blocking=False)
             mask = mask.to(device, non_blocking=False)
@@ -154,13 +169,58 @@ def main():
                 Utils.saveModelParameter("./model_para",model=model)
                 max_loss = loss.item()
 
-        loss_avg = loss_sum / max(cnt, 1)
-        losses.append(loss_avg)
-        print(f"[Epoch {epoch:03d}] loss={loss_avg:.6f}")
+        train_loss_avg = loss_sum / max(cnt, 1)
+        train_losses.append(train_loss_avg)
+
+        # ---------------- Val (every 5 epochs) ----------------
+        if epoch % val_interval == 0:
+            model.eval()
+            v_sum, v_cnt = 0.0, 0
+
+            with torch.no_grad():
+                for images, vals, mask, class_names in tqdm(val_loader):
+                    images = images.to(device, non_blocking=False)
+                    vals = vals.to(device, non_blocking=False)
+                    mask = mask.to(device, non_blocking=False)
+                    class_names = class_names.to(device).long()
+
+                    # VAE encode
+                    micro = 8
+                    z_list = []
+                    for img_mb in images.split(micro, dim=0):
+                        z_mb, _ = vae.encode(img_mb)
+                        z_list.append(z_mb)
+                    z = torch.cat(z_list, dim=0)
+
+                    # valでは cfg_drop を入れる/入れないは設計次第だが、
+                    # 「条件付き性能」を見たいなら drop無し（=keep=1）がおすすめ。
+                    t = torch.randint(1, num_timesteps + 1, (len(z),), device=device)
+                    z_noisy, noise = diffuser.add_noise(z, t)
+
+                    y_used = class_names
+                    vals_used = vals
+                    mask_used = mask
+
+                    noise_pred, geom_pred = model(z_noisy, t, y_used, cond_vals=vals_used, cond_mask=mask_used)
+
+                    loss_noise = F.mse_loss(noise_pred, noise)
+                    loss_geom = masked_geom_mse(geom_pred, vals, mask)
+
+                    v_loss = loss_noise + geom_lambda * loss_geom
+                    v_sum += v_loss.item()
+                    v_cnt += 1
+
+            val_loss_avg = v_sum / max(v_cnt, 1)
+            val_losses.append(val_loss_avg)
+            print(f"[Epoch {epoch:03d}] train={train_loss_avg:.6f}  val={val_loss_avg:.6f}")
+        else:
+            # valしないepochは NaN を入れて “epochと同じ長さ” を保つ
+            val_losses.append(np.nan)
+            print(f"[Epoch {epoch:03d}] train={train_loss_avg:.6f}  val=skip")
+
 
     # ---------------- time ----------------
     learning_time = time.time() - start
-
 
     # ---------------- sampling ----------------
     # [ADD] diffuser.sample_latent_cond が「noise_predのみ」を期待する場合のためのラッパ
@@ -187,7 +247,8 @@ def main():
     # ---------------- Save & Log ----------------
     Utils.recordResult(
         model=model,
-        losses=losses,
+        train_losses=train_losses,
+        val_losses=val_losses,
         images=images,
         batch_size=batch_size,
         num_timesteps=num_timesteps,
