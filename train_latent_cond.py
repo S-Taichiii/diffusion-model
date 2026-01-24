@@ -34,7 +34,7 @@ def main():
     cfg_drop_prob = 0.1 # classifier-free dropout during traing
 
     # [ADD] 回帰ヘッド損失の重み（最初は小さめ推奨）
-    geom_lambda = 0.01
+    geom_lambda = 0.15
 
     # [ADD] cond_vals の次元（あなたのデータに合わせて要調整）
     # 例：直線/円/円弧で共通ベクトルを12次元にしているなら 12

@@ -32,7 +32,7 @@ os.makedirs(arc_dir, exist_ok=True)
 print("directoryを作成しました")
 
 # 条件付きlatent diffusionの学習済みパラメーターのパス
-unet_cond_ckpt = "./result/2026_01_17_19_47/model_para/trained_para.pth"
+unet_cond_ckpt = "./result/2026_01_24_15_06/model_para/trained_para.pth"
 # VAEの学習済みパラメーターのパス
 vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 
@@ -57,17 +57,17 @@ sampler = EntityCsvSampler(
 )
 
 print(f"Making {image_count} line images")
-line_images = sampler.sample("./data/line_224x224_val/line_224x224_val.csv", count=image_count)
+line_images = sampler.sample("./data/line_224x224_test/line_224x224_test.csv", count=image_count)
 
 # # 円を生成したい時
 print(f"Making {image_count} circle images")
 sampler.set_class_id(2)
-circle_images = sampler.sample("./data/circle_224x224_val/circle_224x224_val.csv", count=image_count)
+circle_images = sampler.sample("./data/circle_224x224_test/circle_224x224_test.csv", count=image_count)
 
 # # 弧を生成したい時
 print(f"Making {image_count} arc images")
 sampler.set_class_id(3)
-arc_images = sampler.sample("./data/arc_224x224_val/arc_224x224_val.csv", count=image_count)
+arc_images = sampler.sample("./data/arc_224x224_test/arc_224x224_test.csv", count=image_count)
 
 
 Utils.saveImages(line_dir, line_images)
