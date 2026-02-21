@@ -18,7 +18,9 @@ generated_by_cond/に実行時の時間でディレクトリを作成
 """
 out_dir = "./generated_by_cond"
 now = datetime.datetime.now()
-dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
+# dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
+dir_name: str = "lambda_0"
+print(f"lambda:0")
 out_dir: str = os.path.join(out_dir, dir_name)
 os.makedirs(out_dir, exist_ok=True)
 
@@ -32,7 +34,7 @@ os.makedirs(arc_dir, exist_ok=True)
 print("directoryを作成しました")
 
 # 条件付きlatent diffusionの学習済みパラメーターのパス
-unet_cond_ckpt = "./result/2026_01_24_15_06/model_para/trained_para.pth"
+unet_cond_ckpt = "./result/2026_01_27_08_06/model_para/trained_para.pth"
 # VAEの学習済みパラメーターのパス
 vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 
@@ -46,7 +48,7 @@ num_timesteps = 1000
 diffuser = Diffuser(num_timesteps=num_timesteps, device=device)
 
 # 生成する画像の枚数（各エンティティこの数生成）
-image_count = 100
+image_count = 500
 
 sampler = EntityCsvSampler(
     diffuser=diffuser,

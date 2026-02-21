@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
     # ===================== ここを設定 =====================
     csv_path = "./data/line_224x224_test/line_224x224_test.csv"
-    row_index = 15          # ← n番目（0始まり）
+    row_index = 52          # ← n番目（0始まり）
     class_id = 1           # 1=line, 2=circle, 3=arc
 
     num_timesteps = 1000
@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
 
     # 条件付きlatent diffusionの学習済みパラメーターのパス
-    unet_cond_ckpt = "./result/2026_01_24_15_06/model_para/trained_para.pth"
+    unet_cond_ckpt = "D:/2024_Satsuka/github/DiffusionModel/result/2026_01_24_15_06/model_para/trained_para.pth"
     # VAEの学習済みパラメーターのパス
     vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         save_steps=save_steps,
         save_every=save_every if save_steps is None else None,
         run_name=run_name,
-        out_root="./step_images",
+        out_root="./step_images/lambda01",
         base_wh=base_wh,
         progress=True,
     )

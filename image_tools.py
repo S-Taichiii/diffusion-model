@@ -159,30 +159,40 @@ def images_to_video(
     resize_to_first: bool = True,
     bottom_pad_px: int = 60,
     bg_color_bgr: Tuple[int, int, int] = (255, 255, 255),
+    border_color_bgr: Tuple[int, int, int] = (211, 211, 211),  # ★追加：枠線色（黒）
+    border_thickness: int = 3,  # ★追加：枠線太さ
 ):
     """
     ディレクトリ内画像を1本の動画にする。
-
-    Args:
-        dir_path : 入力画像ディレクトリ
-        with_text : Trueなら画像下部に "t=1" のような文字を入れる
-        out_path : 出力動画パス（Noneなら dir_path/video.mp4）
-        fps : 動画FPS
-        fourcc : コーデック（mp4vが無難）
-        resize_to_first : Trueなら全フレームを1枚目サイズにリサイズ
-        bottom_pad_px : 文字入れ時に下に足す余白ピクセル
-        bg_color_bgr : 文字エリア背景色（BGR）
+    画像部分を枠線で囲む。
     """
+
     paths = list_images(dir_path)
     d = Path(dir_path)
     out_path = Path(out_path) if out_path else (d / "video.mp4")
 
-    # 1枚目でサイズ決定
+    # t番号降順ソート（あれば）
+    t_re = re.compile(r"^t(\d+)$", re.IGNORECASE)
+    tpairs = []
+    others = []
+
+    for p in paths:
+        m = t_re.match(p.stem)
+        if m:
+            tpairs.append((int(m.group(1)), p))
+        else:
+            others.append(p)
+
+    if tpairs:
+        tpairs.sort(key=lambda x: x[0], reverse=True)
+        paths = [p for _, p in tpairs] + others
+
+    # 1枚目サイズ取得
     first = cv2.imread(str(paths[0]), cv2.IMREAD_COLOR)
     if first is None:
         raise RuntimeError(f"Failed to read image: {paths[0]}")
-    h, w = first.shape[:2]
 
+    h, w = first.shape[:2]
     out_h = h + (bottom_pad_px if with_text else 0)
     out_w = w
 
@@ -192,6 +202,7 @@ def images_to_video(
         fps,
         (out_w, out_h),
     )
+
     if not writer.isOpened():
         raise RuntimeError(f"Failed to open VideoWriter: {out_path}")
 
@@ -204,13 +215,21 @@ def images_to_video(
             if resize_to_first and (frame.shape[0] != h or frame.shape[1] != w):
                 frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
 
+            # ===== 枠線を追加 =====
+            cv2.rectangle(
+                frame,
+                (0, 0),
+                (w - 1, h - 1),
+                border_color_bgr,
+                border_thickness,
+            )
+
             if with_text:
                 canvas = np.full((out_h, out_w, 3), bg_color_bgr, dtype=np.uint8)
                 canvas[0:h, 0:w] = frame
 
                 label = _label_from_filename(p)
 
-                # 文字描画（中央寄せ気味）
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 font_scale = 1.0
                 thickness = 2
@@ -229,14 +248,159 @@ def images_to_video(
                     thickness,
                     cv2.LINE_AA,
                 )
+
                 writer.write(canvas)
             else:
                 writer.write(frame)
+
     finally:
         writer.release()
 
     print(f"[Saved] {out_path}")
     return out_path
+
+def images_to_video_two_dirs_concat_cols(
+    dir_path_a: str | Path,
+    dir_path_b: str | Path,
+    with_text: bool = False,
+    out_path: Optional[str | Path] = None,
+    fps: int = 30,
+    fourcc: str = "mp4v",
+    resize_to_first: bool = True,
+    bottom_pad_px: int = 60,
+    bg_color_bgr: Tuple[int, int, int] = (255, 255, 255),
+    border_color_bgr: Tuple[int, int, int] = (200, 200, 200),
+    border_thickness: int = 2,
+):
+    """
+    2ディレクトリの同名画像を横結合し、外周のみ枠線を描画する。
+    中央の結合部では枠を重ねない。
+    """
+
+    da = Path(dir_path_a)
+    db = Path(dir_path_b)
+
+    paths_a = list_images(da)
+    b_map = {p.name: p for p in list_images(db)}
+
+    pairs = [(pa, b_map[pa.name]) for pa in paths_a if pa.name in b_map]
+    if not pairs:
+        raise FileNotFoundError("No matched filenames found.")
+
+    # t番号降順（あれば）
+    t_re = re.compile(r"^t(\d+)$", re.IGNORECASE)
+    tpairs = []
+    others = []
+
+    for pa, pb in pairs:
+        m = t_re.match(pa.stem)
+        if m:
+            tpairs.append((int(m.group(1)), pa, pb))
+        else:
+            others.append((pa, pb))
+
+    if tpairs:
+        tpairs.sort(key=lambda x: x[0], reverse=True)
+        pairs = [(pa, pb) for _, pa, pb in tpairs] + others
+
+    first_a = cv2.imread(str(pairs[0][0]))
+    if first_a is None:
+        raise RuntimeError("Failed to read first image")
+
+    h, w = first_a.shape[:2]
+
+    out_img_h = h
+    out_img_w = w * 2
+    out_h = out_img_h + (bottom_pad_px if with_text else 0)
+    out_w = out_img_w
+
+    if out_path is None:
+        out_path = da / "video_concat.mp4"
+    out_path = Path(out_path)
+
+    writer = cv2.VideoWriter(
+        str(out_path),
+        cv2.VideoWriter_fourcc(*fourcc),
+        fps,
+        (out_w, out_h),
+    )
+
+    if not writer.isOpened():
+        raise RuntimeError("Failed to open VideoWriter")
+
+    try:
+        for pa, pb in pairs:
+            img_a = cv2.imread(str(pa))
+            img_b = cv2.imread(str(pb))
+
+            if img_a is None or img_b is None:
+                raise RuntimeError("Failed to read image pair")
+
+            if resize_to_first:
+                if img_a.shape[:2] != (h, w):
+                    img_a = cv2.resize(img_a, (w, h))
+                if img_b.shape[:2] != (h, w):
+                    img_b = cv2.resize(img_b, (w, h))
+
+            # ===== 横結合 =====
+            frame = cv2.hconcat([img_a, img_b])
+
+            # ===== 外枠 =====
+            cv2.rectangle(
+                frame,
+                (0, 0),
+                (out_img_w - 1, out_img_h - 1),
+                border_color_bgr,
+                border_thickness,
+            )
+
+            # ===== 中央の縦枠線（1本だけ）=====
+            center_x = w  # AとBの境界位置
+
+            cv2.line(
+                frame,
+                (center_x, 0),
+                (center_x, out_img_h - 1),
+                border_color_bgr,
+                border_thickness,
+            )
+
+            if with_text:
+                canvas = np.full((out_h, out_w, 3), bg_color_bgr, dtype=np.uint8)
+                canvas[0:out_img_h, 0:out_img_w] = frame
+
+                label = _label_from_filename(pa)
+
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.0
+                thickness = 2
+                (tw, th), baseline = cv2.getTextSize(label, font, font_scale, thickness)
+
+                x = max(10, (out_w - tw) // 2)
+                y = out_img_h + (bottom_pad_px + th) // 2
+
+                cv2.putText(
+                    canvas,
+                    label,
+                    (x, y),
+                    font,
+                    font_scale,
+                    (0, 0, 0),
+                    thickness,
+                    cv2.LINE_AA,
+                )
+
+                writer.write(canvas)
+            else:
+                writer.write(frame)
+
+    finally:
+        writer.release()
+
+    print(f"[Saved] {out_path}")
+    return out_path
+
+
 
 
 # =========================
@@ -266,6 +430,15 @@ if __name__ == "__main__":
     p_vid.add_argument("--out", type=str, default=None)
     p_vid.add_argument("--fps", type=int, default=30)
 
+    # video2
+    p_vid = sub.add_parser("video2", help="Create video from images")
+    p_vid.add_argument("dir1", type=str, help="Image directory1")
+    p_vid.add_argument("dir2", type=str, help="Image directory2")
+    p_vid.add_argument("--text", action="store_true")
+    p_vid.add_argument("--out", type=str, default=None)
+    p_vid.add_argument("--fps", type=int, default=30)
+
+
     args = parser.parse_args()
 
     if args.cmd == "tile":
@@ -285,3 +458,21 @@ if __name__ == "__main__":
             out_path=args.out,
             fps=args.fps,
         )
+    elif args.cmd == "video2":
+        images_to_video_two_dirs_concat_cols(
+            dir_path_a=args.dir1,
+            dir_path_b=args.dir2,
+            with_text=args.text,
+            out_path=args.out,
+            fps=args.fps,
+        )
+
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_0\circle\run_20260206_134618\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda0_circle_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_001\circle\run_20260206_134559\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda001_circle_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_005\circle\run_20260206_134511\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda005_circle_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_01\circle\run_20260206_134356\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda01_circle_tiles --random --seed 1
+
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_01\line\run_20260206_134124\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda01_line_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_005\line\run_20260206_134045\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda005_line_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_001\line\run_20260206_134016\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda001_line_tiles --random --seed 1
+    # python image_tools.py tile "D:\2024_Satsuka\github\DiffusionModel\eval_result\lambda_0\line\run_20260206_133644\diff" --rows 1 --cols 10 --out_dir "C:\Users\ab20082\OneDrive - 芝浦工業大学 教研テナント (SIC)\修士卒業研究\tile_images_col10" --filename lambda0_line_tiles --random --seed 1
