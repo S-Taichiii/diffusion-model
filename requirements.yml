@@ -1,0 +1,16 @@
+name: project-env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch
+  - torchvision
+  - numpy
+  - pandas
+  - pillow
+  - matplotlib
+  - tqdm
+  - scipy
+  - opencv
+  - pip
