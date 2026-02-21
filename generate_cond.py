@@ -5,10 +5,12 @@ import os, datetime
 import torch
 
 from models.unet_cond import UnetCond
+from models.unet_cond_geom import UnetCondWithGeomHead
 from models.vae import VAE
 from utils import Utils
 from diff import Diffuser
 
+from entityCsvSampler import EntityCsvSampler
 
 """
 generated_by_cond/に実行時の時間でディレクトリを作成
@@ -16,7 +18,9 @@ generated_by_cond/に実行時の時間でディレクトリを作成
 """
 out_dir = "./generated_by_cond"
 now = datetime.datetime.now()
-dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
+# dir_name: str = now.strftime(now.strftime("%Y_%m_%d_%H_%M"))
+dir_name: str = "lambda_0"
+print(f"lambda:0")
 out_dir: str = os.path.join(out_dir, dir_name)
 os.makedirs(out_dir, exist_ok=True)
 
@@ -27,30 +31,46 @@ os.makedirs(circle_dir, exist_ok=True)
 arc_dir = os.path.join(out_dir, "arc")
 os.makedirs(arc_dir, exist_ok=True)
 
+print("directoryを作成しました")
+
 # 条件付きlatent diffusionの学習済みパラメーターのパス
-unet_cond_ckpt = "./result/2025_10_07_17_40/trained_para.pth"
+unet_cond_ckpt = "./result/2026_01_27_08_06/model_para/trained_para.pth"
 # VAEの学習済みパラメーターのパス
 vae_ckpt = "./vae/2025_09_30_19_34/vae_best.pth"
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device}")
 
-unet = Utils.loadModel(unet_cond_ckpt, UnetCond(), device=device)
+unet = Utils.loadModel(unet_cond_ckpt, UnetCondWithGeomHead(), device=device)
 vae = Utils.loadModel(vae_ckpt, VAE(), device=device)
 
 num_timesteps = 1000
 diffuser = Diffuser(num_timesteps=num_timesteps, device=device)
 
 # 生成する画像の枚数（各エンティティこの数生成）
-image_count = 100
+image_count = 500
 
-"""
-class_countsの辞書のkeyは生成するクラス(1: line, 2: circle, 3: arc)
-valueは生成枚数
-"""
-line_images = diffuser.sample_latent_cond(unet, class_counts={1:image_count}, vae=vae)
-circle_images = diffuser.sample_latent_cond(unet, class_counts={2:image_count}, vae=vae)
-arc_images = diffuser.sample_latent_cond(unet, class_counts={3:image_count}, vae=vae)
+sampler = EntityCsvSampler(
+    diffuser=diffuser,
+    model=unet,
+    vae=vae,
+    class_id=1,                 # 1=line, 2=circle, 3=arc
+    # base_wh=(400, 280),      # 必要なら固定（未指定ならCSVから推定→スナップ）
+)
+
+print(f"Making {image_count} line images")
+line_images = sampler.sample("./data/line_224x224_test/line_224x224_test.csv", count=image_count)
+
+# # 円を生成したい時
+print(f"Making {image_count} circle images")
+sampler.set_class_id(2)
+circle_images = sampler.sample("./data/circle_224x224_test/circle_224x224_test.csv", count=image_count)
+
+# # 弧を生成したい時
+print(f"Making {image_count} arc images")
+sampler.set_class_id(3)
+arc_images = sampler.sample("./data/arc_224x224_test/arc_224x224_test.csv", count=image_count)
+
 
 Utils.saveImages(line_dir, line_images)
 Utils.saveImages(circle_dir, circle_images)

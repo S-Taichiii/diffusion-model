@@ -3,10 +3,9 @@ import datetime
 import torch
 import matplotlib.pyplot as plt
 import csv
+import numpy as np
+import matplotlib.pyplot as plt
 
-from pathlib import Path
-from PIL import Image
-from torch.utils.data import Dataset
 from torch import nn
 from diff import Diffuser
 from models.unet import Unet
@@ -15,7 +14,7 @@ from models.unet import Unet
 
 class Utils:
     @staticmethod
-    def recordResult(model=None, losses=None, images=None, **kwargs) -> None:
+    def recordResult(model=None, train_losses=None, val_losses=None, images=None, **kwargs) -> None:
         try:
             # current directory上にresultディレクトリがない場合は作成
             cd = os.getcwd()
@@ -47,9 +46,9 @@ class Utils:
             if model: Utils.saveModelParameter(dir_path, model)
 
             # lossのグラフを保存, 値をcsvに出力
-            if losses: 
-                Utils.saveLossToGraph(dir_path, losses)
-                Utils.saveLossToCsv(dir_path, losses)
+            if train_losses and val_losses: 
+                Utils.saveTrainValLossGraph(dir_path, train_losses, val_losses)
+                Utils.saveTrainValLossCsv(dir_path, train_losses, val_losses)
 
             # 生成画像を保存
             if images:
@@ -101,7 +100,6 @@ class Utils:
         train_loss と val_loss を同じ図に描いて保存する。
         長さが異なる場合は短い方に合わせて描画する。
         """
-        os.makedirs(dir_path, exist_ok=True)
         n = min(len(train_losses), len(val_losses))
         if n == 0:
             print("Warning: no data to plot (train/val losses are empty).")
@@ -124,39 +122,106 @@ class Utils:
         plt.close()
 
     @staticmethod
+    def saveTrainValLossGraph(dir_path: str, train_losses, val_losses, filename: str = "losses_train_val.png") -> None:
+        """
+        train_loss と val_loss を同じ図に描いて保存する。
+        val が 5epoch ごと等で疎な場合（np.nan を含む）にも対応。
+        """
+
+        if train_losses is None or len(train_losses) == 0:
+            print("Warning: train_losses is empty.")
+            return
+
+        epochs = len(train_losses)
+        x = np.arange(1, epochs + 1)
+
+        train_arr = np.asarray(train_losses, dtype=float)
+
+        # val は無い/短い/NaN含みを許容
+        if val_losses is None:
+            val_arr = np.full(epochs, np.nan, dtype=float)
+        else:
+            val_arr = np.asarray(val_losses, dtype=float)
+            if len(val_arr) < epochs:
+                # 足りない分は NaN で埋める
+                val_arr = np.concatenate([val_arr, np.full(epochs - len(val_arr), np.nan)])
+            elif len(val_arr) > epochs:
+                val_arr = val_arr[:epochs]
+
+        plt.figure()
+        plt.plot(x, train_arr, label="train_loss")
+
+        # NaN じゃないところだけプロット（疎に点が出る）
+        ok = np.isfinite(val_arr)
+        if np.any(ok):
+            plt.plot(x[ok], val_arr[ok], label="val_loss", marker="o", linestyle="-")
+        else:
+            print("Note: val_losses has no finite values; only train_loss will be plotted.")
+
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Train & Val Loss")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        out_path = os.path.join(dir_path, filename)
+        plt.savefig(out_path)
+        plt.close()
+
+    @staticmethod
     def saveTrainValLossCsv(dir_path: str, train_losses, val_losses, filename: str = "losses_train_val.csv") -> None:
         """
         train/val の損失を 1 つの CSV にまとめて保存する。
-        長さが異なる場合は短い方に合わせる。
+        val が 5epoch ごと等で疎な場合（np.nan を含む）にも対応。
+        val 未評価epochは空欄で出力。
         """
+        import os, csv
+        import numpy as np
+
         os.makedirs(dir_path, exist_ok=True)
-        n = min(len(train_losses), len(val_losses))
-        if n == 0:
-            print("Warning: no data to save (train/val losses are empty).")
+
+        if train_losses is None or len(train_losses) == 0:
+            print("Warning: train_losses is empty.")
             return
 
-        out_path: str = os.path.join(dir_path, filename)
+        epochs = len(train_losses)
+        train_arr = np.asarray(train_losses, dtype=float)
+
+        if val_losses is None:
+            val_arr = np.full(epochs, np.nan, dtype=float)
+        else:
+            val_arr = np.asarray(val_losses, dtype=float)
+            if len(val_arr) < epochs:
+                val_arr = np.concatenate([val_arr, np.full(epochs - len(val_arr), np.nan)])
+            elif len(val_arr) > epochs:
+                val_arr = val_arr[:epochs]
+
+        out_path = os.path.join(dir_path, filename)
         with open(out_path, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["epoch", "train_loss", "val_loss"])
-            for i in range(n):
-                writer.writerow([i + 1, train_losses[i], val_losses[i]])
-            writer.writerow(["min_train", min(train_losses[:n]), ""])
-            writer.writerow(["min_val", "", min(val_losses[:n])])
+            for i in range(epochs):
+                v = val_arr[i]
+                writer.writerow([i + 1, float(train_arr[i]), "" if not np.isfinite(v) else float(v)])
+
+            # min は NaN を無視して計算
+            writer.writerow(["min_train", float(np.nanmin(train_arr)), ""])
+            if np.any(np.isfinite(val_arr)):
+                writer.writerow(["min_val", "", float(np.nanmin(val_arr))])
+            else:
+                writer.writerow(["min_val", "", ""])
+
 
     @staticmethod
     def saveImages(dir_path: str, images) -> None:
         # 画像をまとめて保存
-        Utils.concat_images(dir_path, images)
+        # Utils.concat_images(dir_path, images)
 
         # 画像を個々に保存する
         for i, image in enumerate(images):
-            fig = plt.figure(facecolor="gray")
             file_name = os.path.join(dir_path, f'pic{i+1}.png')
-            plt.imshow(image)
-            plt.axis("off")
-            plt.savefig(file_name)
-            plt.close()
+            image.save(file_name)
 
 
     @staticmethod
