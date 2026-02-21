@@ -1,3 +1,4 @@
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -98,12 +99,35 @@ class Up(nn.Module):
         emb = self.emb_layer(t)[:, :, None, None].repeat(1, 1, x.shape[-2], x.shape[-1])
         return x + emb
 
-class Unet(nn.Module):
-    def __init__(self, in_ch=3, time_dim=256, remove_deep_conv=False):
+class UnetCond(nn.Module):
+    """
+    Conditional Unet for latent diffusion
+    
+    args:
+    - in_ch: latent channels (use 4 to match VAE z_channels)
+    - time_dim: size of sinusoidal time embedding
+    - num_classes: 3 actual classes (line, circle, arc) + implicit 0=uncond for CFG
+    - cfg_drop_prob: prob to replace lavel with 0 during traning(classifier-free guidance)
+    - remove_deep_conv: remove or not deep_conv
+    """
+    def __init__(self, in_ch=4, time_dim=256, num_classes=3, cfg_drop_prob=0.1, remove_deep_conv=False):
         super().__init__()
         self.time_dim = time_dim
         self.remove_deep_conv = remove_deep_conv
+        self.num_classes = num_classes
+        self.cfg_drop_prob = cfg_drop_prob
+
+        # class embedding: index 0 reserved for unconditional
+        self.class_emb = nn.Embedding(num_classes + 1, time_dim)
         
+        # ★ 追加: (vals, mask) -> time_dim への MLP
+        # 入力次元は vals(K) + mask(K) = 2K
+        self.cond_mlp = nn.Sequential(
+            nn.Linear(12 * 2, time_dim),
+            nn.SiLU(),
+            nn.Linear(time_dim, time_dim),
+        )
+
         self.inc = ResBlock(in_ch, 64)
         self.down1 = Down(64, 128)
         self.sa1 = AttenionBlock(128)
@@ -136,6 +160,12 @@ class Unet(nn.Module):
         pos_enc = torch.cat([pos_enc_sin, pos_enc_cos], dim=-1)
         return pos_enc
 
+    def fused_embedding(self, t: torch.Tensor, y: torch.Tensor):
+        t = t.unsqueeze(-1)
+        t_emb = self.pos_encoding(t, self.time_dim)
+        c_emb = self.class_emb(y)
+        return t_emb + c_emb
+
     def unet_forward(self, x, t):
         x1 = self.inc(x)
         # print("x1.shape=", x1.shape)
@@ -164,22 +194,24 @@ class Unet(nn.Module):
 
         return output
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor):
-        t = t.unsqueeze(-1)
-        t = self.pos_encoding(t, self.time_dim)
-        return self.unet_forward(x, t)
+    def forward(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor, cond_vals: torch.Tensor=None, cond_mask: torch.Tensor=None, cond_drop_prob: float = None):
+        # y comes in with real class ids (1..num_classes) during training; we may drop to 0 here
+        if self.training and self.cfg_drop_prob > 0:
+            drop = torch.rand_like(y.float()) < self.cfg_drop_prob
+            y = torch.where(drop, torch.zeros_like(y), y)
+        emb = self.fused_embedding(t, y)
 
+        # ★ 追加: 数値条件 (vals, mask) を time_dim に投影して加算
+        if (cond_vals is not None) and (cond_mask is not None):
+            # CFG的ドロップ（未指定なら class と同じ確率を使う）
+            p = self.cfg_drop_prob if cond_drop_prob is None else cond_drop_prob
+            if self.training and p > 0.0:
+                keep = (torch.rand(cond_vals.size(0), device=cond_vals.device) > p).float().unsqueeze(1)
+                cond_vals = cond_vals * keep
+                cond_mask = cond_mask * keep
 
-if __name__== "__main__":
-    model = Unet(in_ch=4, remove_deep_conv=True)
-    # sample data
-    batch_size = 128
-    input_channel = 4
-    height, width = 28, 28
-    x = torch.randn(batch_size, input_channel, height, width)
-    t = torch.randn(batch_size)
-    
-    output: torch.Tensor = model(x, t)
+            cond_feat = torch.cat([cond_vals, cond_mask], dim=1)   # (B, 2K)
+            cond_emb = self.cond_mlp(cond_feat)                    # (B, time_dim)
+            emb = emb + cond_emb
+        return self.unet_forward(x, emb)
 
-    print("出力の型：", type(output))
-    print("主力の形状", output.shape)

@@ -1,3 +1,8 @@
 __pycache__/
 data/
 result/
+vae/
+generated_by_cond/
+step_images/
+tile_images/
+model_para/
